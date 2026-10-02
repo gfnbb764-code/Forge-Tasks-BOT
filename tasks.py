@@ -7,11 +7,18 @@
 from database import (
     get_user,
     get_guild,
+
     get_task_progress,
     set_task_progress,
+
+    get_period_stats,
+
     is_task_completed,
     complete_task,
-    add_xp,
+
+    get_task_state,
+    set_task_index,
+    advance_task_index,
 )
 
 
@@ -38,7 +45,7 @@ DAILY_TASKS = {
     },
 
     "daily_afk": {
-        "name": "AFK لمدة 30 دقيقة",
+        "name": "البقاء في الروم الصوتي 30 دقيقة",
         "description": "ابقَ في روم صوتي لمدة 30 دقيقة.",
         "type": "afk",
         "target": 1800,
@@ -67,7 +74,7 @@ DAILY_TASKS = {
 WEEKLY_TASKS = {
 
     "weekly_afk": {
-        "name": "AFK لمدة ساعة",
+        "name": "البقاء في الروم الصوتي ساعة",
         "description": "ابقَ في روم صوتي لمدة ساعة.",
         "type": "afk",
         "target": 3600,
@@ -84,7 +91,7 @@ WEEKLY_TASKS = {
 
     "weekly_invites": {
         "name": "دعوة 10 أشخاص",
-        "description": "ادعُ 10 أشخاص للسيرفر.",
+        "description": "ادعُ 10 أشخاص إلى السيرفر.",
         "type": "invites",
         "target": 10,
         "reward": 70,
@@ -100,7 +107,7 @@ WEEKLY_TASKS = {
 
     "weekly_nickname": {
         "name": "تغيير الاسم المستعار",
-        "description": "غيّر اسمك المستعار.",
+        "description": "غيّر اسمك المستعار مرة واحدة.",
         "type": "nickname",
         "target": 1,
         "reward": 20,
@@ -113,14 +120,14 @@ WEEKLY_TASKS = {
 # MONTHLY TASKS
 # ============================================================
 
-# لا توجد مهام شهرية حالياً.
-# نضيفها لاحقاً بدون تغيير النظام.
+# لا توجد مهام شهرية حاليًا.
+# يمكن إضافة المهام لاحقًا بدون تغيير نظام المهام.
 
 MONTHLY_TASKS = {}
 
 
 # ============================================================
-# ALL TASKS
+# ALL TASK GROUPS
 # ============================================================
 
 TASK_GROUPS = {
@@ -130,6 +137,28 @@ TASK_GROUPS = {
     "weekly": WEEKLY_TASKS,
 
     "monthly": MONTHLY_TASKS,
+
+}
+
+
+# ============================================================
+# TASK ORDER
+# ============================================================
+
+# ترتيب المهام مهم جدًا.
+#
+# العضو لا يستطيع تنفيذ المهمة الثانية
+# إلا بعد إكمال المهمة الأولى.
+#
+# وبعد إكمال المهمة الحالية يتم فتح التالية تلقائيًا.
+
+TASK_ORDER = {
+
+    "daily": list(DAILY_TASKS.keys()),
+
+    "weekly": list(WEEKLY_TASKS.keys()),
+
+    "monthly": list(MONTHLY_TASKS.keys()),
 
 }
 
@@ -175,7 +204,117 @@ def get_all_tasks(
 
 
 # ============================================================
-# TASK ENABLED
+# GET TASK ORDER
+# ============================================================
+
+def get_task_order(
+    period
+):
+
+    return TASK_ORDER.get(
+        period,
+        []
+    )
+
+
+# ============================================================
+# GET CURRENT TASK INDEX
+# ============================================================
+
+def get_current_task_index(
+    guild_id,
+    user_id,
+    period
+):
+
+    state = get_task_state(
+        guild_id,
+        user_id,
+        period
+    )
+
+    if not state:
+
+        return 0
+
+    return int(
+        state["current_index"] or 0
+    )
+
+
+# ============================================================
+# GET ACTIVE TASK ID
+# ============================================================
+
+def get_active_task_id(
+    guild_id,
+    user_id,
+    period
+):
+
+    if not is_period_enabled(
+        guild_id,
+        period
+    ):
+
+        return None
+
+
+    order = get_task_order(
+        period
+    )
+
+    if not order:
+
+        return None
+
+
+    current_index = get_current_task_index(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if current_index >= len(order):
+
+        return None
+
+
+    return order[
+        current_index
+    ]
+
+
+# ============================================================
+# GET ACTIVE TASK
+# ============================================================
+
+def get_active_task(
+    guild_id,
+    user_id,
+    period
+):
+
+    task_id = get_active_task_id(
+        guild_id,
+        user_id,
+        period
+    )
+
+    if not task_id:
+
+        return None
+
+
+    return get_task(
+        task_id,
+        period
+    )
+
+
+# ============================================================
+# PERIOD ENABLED
 # ============================================================
 
 def is_period_enabled(
@@ -214,6 +353,52 @@ def is_period_enabled(
 
     return bool(
         guild[setting]
+    )
+
+
+# ============================================================
+# PERIOD HAS TASKS
+# ============================================================
+
+def period_has_tasks(
+    period
+):
+
+    return bool(
+        get_task_order(
+            period
+        )
+    )
+
+
+# ============================================================
+# ALL TASKS COMPLETED
+# ============================================================
+
+def all_tasks_completed(
+    guild_id,
+    user_id,
+    period
+):
+
+    order = get_task_order(
+        period
+    )
+
+    if not order:
+
+        return True
+
+
+    current_index = get_current_task_index(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    return (
+        current_index >= len(order)
     )
 
 
@@ -259,6 +444,7 @@ def get_task_status(
 
     percentage = 0
 
+
     if target > 0:
 
         percentage = int(
@@ -267,6 +453,13 @@ def get_task_status(
                 1
             ) * 100
         )
+
+
+    active_task_id = get_active_task_id(
+        guild_id,
+        user_id,
+        period
+    )
 
 
     return {
@@ -289,7 +482,41 @@ def get_task_status(
 
         "completed": completed,
 
+        "active": (
+            active_task_id == task_id
+        ),
+
     }
+
+
+# ============================================================
+# ACTIVE TASK STATUS
+# ============================================================
+
+def get_active_task_status(
+    guild_id,
+    user_id,
+    period
+):
+
+    task_id = get_active_task_id(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if not task_id:
+
+        return None
+
+
+    return get_task_status(
+        guild_id,
+        user_id,
+        task_id,
+        period
+    )
 
 
 # ============================================================
@@ -331,6 +558,229 @@ def progress_bar(
 
 
 # ============================================================
+# GET PERIOD STAT VALUE
+# ============================================================
+
+def get_period_stat_value(
+    guild_id,
+    user_id,
+    period,
+    stat_name
+):
+
+    stats = get_period_stats(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if not stats:
+
+        return 0
+
+
+    try:
+
+        return int(
+            stats[stat_name] or 0
+        )
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError
+    ):
+
+        return 0
+
+
+# ============================================================
+# GET TASK PROGRESS FROM CURRENT STATS
+# ============================================================
+
+def calculate_task_progress(
+    guild_id,
+    user_id,
+    task_id,
+    period
+):
+
+    task = get_task(
+        task_id,
+        period
+    )
+
+    if not task:
+
+        return 0
+
+
+    task_type = task["type"]
+
+
+    # ----------------------------------------
+    # MESSAGES
+    # ----------------------------------------
+
+    if task_type == "messages":
+
+        return get_period_stat_value(
+            guild_id,
+            user_id,
+            period,
+            "messages"
+        )
+
+
+    # ----------------------------------------
+    # IMAGES
+    # ----------------------------------------
+
+    if task_type == "images":
+
+        return get_period_stat_value(
+            guild_id,
+            user_id,
+            period,
+            "images"
+        )
+
+
+    # ----------------------------------------
+    # INVITES
+    # ----------------------------------------
+
+    if task_type == "invites":
+
+        return get_period_stat_value(
+            guild_id,
+            user_id,
+            period,
+            "invites"
+        )
+
+
+    # ----------------------------------------
+    # VOICE / AFK
+    # ----------------------------------------
+
+    if task_type == "afk":
+
+        return get_period_stat_value(
+            guild_id,
+            user_id,
+            period,
+            "voice_seconds"
+        )
+
+
+    # ----------------------------------------
+    # NICKNAME
+    # ----------------------------------------
+
+    if task_type == "nickname":
+
+        return get_period_stat_value(
+            guild_id,
+            user_id,
+            period,
+            "nickname_changes"
+        )
+
+
+    # ----------------------------------------
+    # LEVEL
+    # ----------------------------------------
+
+    if task_type == "level":
+
+        user = get_user(
+            guild_id,
+            user_id
+        )
+
+
+        if not user:
+
+            return 0
+
+
+        return int(
+            user["level"] or 1
+        )
+
+
+    return 0
+
+
+# ============================================================
+# SYNC ACTIVE TASK PROGRESS
+# ============================================================
+
+def sync_active_task_progress(
+    guild_id,
+    user_id,
+    period
+):
+
+    task_id = get_active_task_id(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if not task_id:
+
+        return {
+
+            "success": False,
+
+            "reason": "no_active_task",
+
+            "period": period,
+
+        }
+
+
+    task = get_task(
+        task_id,
+        period
+    )
+
+
+    if not task:
+
+        return {
+
+            "success": False,
+
+            "reason": "task_not_found",
+
+            "period": period,
+
+        }
+
+
+    progress = calculate_task_progress(
+        guild_id,
+        user_id,
+        task_id,
+        period
+    )
+
+
+    return update_task(
+        guild_id,
+        user_id,
+        task_id,
+        period,
+        progress
+    )
+
+
+# ============================================================
 # UPDATE TASK
 # ============================================================
 
@@ -347,6 +797,7 @@ def update_task(
         period
     )
 
+
     if not task:
 
         return {
@@ -354,6 +805,8 @@ def update_task(
             "success": False,
 
             "reason": "task_not_found",
+
+            "completed": False,
 
         }
 
@@ -368,6 +821,34 @@ def update_task(
             "success": False,
 
             "reason": "period_disabled",
+
+            "completed": False,
+
+        }
+
+
+    active_task_id = get_active_task_id(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    # --------------------------------------------------------
+    # لا نسمح بتقدم مهمة ليست المهمة النشطة.
+    # --------------------------------------------------------
+
+    if active_task_id != task_id:
+
+        return {
+
+            "success": False,
+
+            "reason": "task_not_active",
+
+            "completed": False,
+
+            "active_task_id": active_task_id,
 
         }
 
@@ -385,10 +866,30 @@ def update_task(
 
             "reason": "already_completed",
 
+            "completed": True,
+
+            "task": task,
+
         }
 
 
-    target = task["target"]
+    target = int(
+        task["target"]
+    )
+
+
+    try:
+
+        progress = int(
+            progress
+        )
+
+    except (
+        TypeError,
+        ValueError
+    ):
+
+        progress = 0
 
 
     progress = max(
@@ -415,6 +916,10 @@ def update_task(
     completed = False
 
 
+    # --------------------------------------------------------
+    # COMPLETE TASK
+    # --------------------------------------------------------
+
     if progress >= target:
 
         completed = complete_task(
@@ -426,6 +931,38 @@ def update_task(
         )
 
 
+        # ----------------------------------------------------
+        # فتح المهمة التالية تلقائيًا.
+        # ----------------------------------------------------
+
+        if completed:
+
+            advance_task_index(
+                guild_id,
+                user_id,
+                period
+            )
+
+
+    percentage = 100
+
+    if target > 0:
+
+        percentage = int(
+            min(
+                progress / target,
+                1
+            ) * 100
+        )
+
+
+    next_task_id = get_active_task_id(
+        guild_id,
+        user_id,
+        period
+    )
+
+
     return {
 
         "success": True,
@@ -434,15 +971,23 @@ def update_task(
 
         "task": task,
 
+        "task_id": task_id,
+
+        "period": period,
+
         "progress": progress,
 
         "target": target,
 
         "reward": task["reward"],
 
-        "percentage": int(
-            (progress / target) * 100
-        ) if target else 100,
+        "percentage": percentage,
+
+        "next_task_id": next_task_id,
+
+        "all_completed": (
+            next_task_id is None
+        ),
 
     }
 
@@ -477,7 +1022,7 @@ def increment_task(
 
 
 # ============================================================
-# MESSAGE TASKS
+# PROCESS ACTIVE MESSAGE TASK
 # ============================================================
 
 def process_message_tasks(
@@ -489,21 +1034,51 @@ def process_message_tasks(
     results = []
 
 
-    # ----------------------------------------
-    # DAILY
-    # ----------------------------------------
+    # --------------------------------------------------------
+    # DAILY + WEEKLY
+    # --------------------------------------------------------
 
-    daily = get_task(
-        "daily_messages",
-        "daily"
-    )
+    for period in (
+        "daily",
+        "weekly",
+    ):
+
+        task_id = get_active_task_id(
+            guild_id,
+            user_id,
+            period
+        )
 
 
-    if daily:
+        if not task_id:
+
+            continue
+
+
+        task = get_task(
+            task_id,
+            period
+        )
+
+
+        if not task:
+
+            continue
+
+
+        if task["type"] != "messages":
+
+            continue
+
 
         guild = get_guild(
             guild_id
         )
+
+
+        if not guild:
+
+            continue
 
 
         allowed_channel = guild[
@@ -511,83 +1086,36 @@ def process_message_tasks(
         ]
 
 
+        # ----------------------------------------------------
+        # إذا تم تحديد روم للرسائل،
+        # يجب أن تكون الرسالة داخله.
+        # ----------------------------------------------------
+
         if (
-            allowed_channel is None
-            or message_channel_id == allowed_channel
+            allowed_channel is not None
+            and message_channel_id != allowed_channel
         ):
 
-            user = get_user(
-                guild_id,
-                user_id
-            )
+            continue
 
 
-            result = update_task(
-                guild_id,
-                user_id,
-                "daily_messages",
-                "daily",
-                user["messages"]
-            )
-
-
-            results.append(
-                result
-            )
-
-
-    # ----------------------------------------
-    # WEEKLY
-    # ----------------------------------------
-
-    weekly = get_task(
-        "weekly_messages",
-        "weekly"
-    )
-
-
-    if weekly:
-
-        guild = get_guild(
-            guild_id
+        result = sync_active_task_progress(
+            guild_id,
+            user_id,
+            period
         )
 
 
-        allowed_channel = guild[
-            "message_channel"
-        ]
-
-
-        if (
-            allowed_channel is None
-            or message_channel_id == allowed_channel
-        ):
-
-            user = get_user(
-                guild_id,
-                user_id
-            )
-
-
-            result = update_task(
-                guild_id,
-                user_id,
-                "weekly_messages",
-                "weekly",
-                user["messages"]
-            )
-
-
-            results.append(
-                result
-            )
+        results.append(
+            result
+        )
 
 
     return results
 
 
 # ============================================================
-# IMAGE TASKS
+# PROCESS ACTIVE IMAGE TASK
 # ============================================================
 
 def process_image_tasks(
@@ -595,48 +1123,59 @@ def process_image_tasks(
     user_id
 ):
 
-    user = get_user(
-        guild_id,
-        user_id
-    )
-
-
     results = []
 
 
-    result = update_task(
-        guild_id,
-        user_id,
-        "daily_images",
+    for period in (
         "daily",
-        user["images"]
-    )
-
-
-    results.append(
-        result
-    )
-
-
-    result = update_task(
-        guild_id,
-        user_id,
-        "weekly_images",
         "weekly",
-        user["images"]
-    )
+    ):
+
+        task_id = get_active_task_id(
+            guild_id,
+            user_id,
+            period
+        )
 
 
-    results.append(
-        result
-    )
+        if not task_id:
+
+            continue
+
+
+        task = get_task(
+            task_id,
+            period
+        )
+
+
+        if not task:
+
+            continue
+
+
+        if task["type"] != "images":
+
+            continue
+
+
+        result = sync_active_task_progress(
+            guild_id,
+            user_id,
+            period
+        )
+
+
+        results.append(
+            result
+        )
 
 
     return results
 
 
 # ============================================================
-# INVITE TASKS
+# PROCESS ACTIVE INVITE TASK
 # ============================================================
 
 def process_invite_tasks(
@@ -644,48 +1183,59 @@ def process_invite_tasks(
     user_id
 ):
 
-    user = get_user(
-        guild_id,
-        user_id
-    )
-
-
     results = []
 
 
-    result = update_task(
-        guild_id,
-        user_id,
-        "daily_invites",
+    for period in (
         "daily",
-        user["invites"]
-    )
-
-
-    results.append(
-        result
-    )
-
-
-    result = update_task(
-        guild_id,
-        user_id,
-        "weekly_invites",
         "weekly",
-        user["invites"]
-    )
+    ):
+
+        task_id = get_active_task_id(
+            guild_id,
+            user_id,
+            period
+        )
 
 
-    results.append(
-        result
-    )
+        if not task_id:
+
+            continue
+
+
+        task = get_task(
+            task_id,
+            period
+        )
+
+
+        if not task:
+
+            continue
+
+
+        if task["type"] != "invites":
+
+            continue
+
+
+        result = sync_active_task_progress(
+            guild_id,
+            user_id,
+            period
+        )
+
+
+        results.append(
+            result
+        )
 
 
     return results
 
 
 # ============================================================
-# VOICE / AFK TASKS
+# PROCESS ACTIVE VOICE / AFK TASK
 # ============================================================
 
 def process_voice_tasks(
@@ -693,56 +1243,67 @@ def process_voice_tasks(
     user_id
 ):
 
-    user = get_user(
-        guild_id,
-        user_id
-    )
-
-
     results = []
 
 
-    # ----------------------------------------
-    # DAILY AFK
-    # ----------------------------------------
-
-    result = update_task(
-        guild_id,
-        user_id,
-        "daily_afk",
+    for period in (
         "daily",
-        user["afk_seconds"]
-    )
-
-
-    results.append(
-        result
-    )
-
-
-    # ----------------------------------------
-    # WEEKLY AFK
-    # ----------------------------------------
-
-    result = update_task(
-        guild_id,
-        user_id,
-        "weekly_afk",
         "weekly",
-        user["afk_seconds"]
-    )
+    ):
+
+        task_id = get_active_task_id(
+            guild_id,
+            user_id,
+            period
+        )
 
 
-    results.append(
-        result
-    )
+        if not task_id:
+
+            continue
+
+
+        task = get_task(
+            task_id,
+            period
+        )
+
+
+        if not task:
+
+            continue
+
+
+        if task["type"] != "afk":
+
+            continue
+
+
+        # ----------------------------------------------------
+        # مهم:
+        #
+        # هذه المهمة تعتمد على وقت البقاء في الروم الصوتي.
+        #
+        # لم نحذف نظام Voice / AFK Task.
+        # ----------------------------------------------------
+
+        result = sync_active_task_progress(
+            guild_id,
+            user_id,
+            period
+        )
+
+
+        results.append(
+            result
+        )
 
 
     return results
 
 
 # ============================================================
-# LEVEL TASK
+# PROCESS LEVEL TASK
 # ============================================================
 
 def process_level_tasks(
@@ -750,26 +1311,70 @@ def process_level_tasks(
     user_id
 ):
 
-    user = get_user(
-        guild_id,
-        user_id
-    )
+    period = "daily"
 
 
-    result = update_task(
+    task_id = get_active_task_id(
         guild_id,
         user_id,
-        "daily_level5",
-        "daily",
-        user["level"]
+        period
     )
 
 
-    return result
+    if not task_id:
+
+        return {
+
+            "success": False,
+
+            "reason": "no_active_task",
+
+            "completed": False,
+
+        }
+
+
+    task = get_task(
+        task_id,
+        period
+    )
+
+
+    if not task:
+
+        return {
+
+            "success": False,
+
+            "reason": "task_not_found",
+
+            "completed": False,
+
+        }
+
+
+    if task["type"] != "level":
+
+        return {
+
+            "success": False,
+
+            "reason": "task_not_level",
+
+            "completed": False,
+
+        }
+
+
+    return sync_active_task_progress(
+        guild_id,
+        user_id,
+        period
+    )
 
 
 # ============================================================
-# NICKNAME TASK
+# PROCESS NICKNAME TASK
 # ============================================================
 
 def process_nickname_task(
@@ -777,16 +1382,66 @@ def process_nickname_task(
     user_id
 ):
 
-    result = update_task(
+    period = "weekly"
+
+
+    task_id = get_active_task_id(
         guild_id,
         user_id,
-        "weekly_nickname",
-        "weekly",
-        1
+        period
     )
 
 
-    return result
+    if not task_id:
+
+        return {
+
+            "success": False,
+
+            "reason": "no_active_task",
+
+            "completed": False,
+
+        }
+
+
+    task = get_task(
+        task_id,
+        period
+    )
+
+
+    if not task:
+
+        return {
+
+            "success": False,
+
+            "reason": "task_not_found",
+
+            "completed": False,
+
+        }
+
+
+    if task["type"] != "nickname":
+
+        return {
+
+            "success": False,
+
+            "reason": "task_not_nickname",
+
+            "completed": False,
+
+        }
+
+
+    return sync_active_task_progress(
+        guild_id,
+        user_id,
+        period
+    )
 
 
 # ============================================================
@@ -801,6 +1456,10 @@ def process_all_tasks(
     results = []
 
 
+    # --------------------------------------------------------
+    # MESSAGE TASKS
+    # --------------------------------------------------------
+
     results.extend(
         process_message_tasks(
             guild_id,
@@ -808,6 +1467,10 @@ def process_all_tasks(
         )
     )
 
+
+    # --------------------------------------------------------
+    # IMAGE TASKS
+    # --------------------------------------------------------
 
     results.extend(
         process_image_tasks(
@@ -817,6 +1480,10 @@ def process_all_tasks(
     )
 
 
+    # --------------------------------------------------------
+    # INVITE TASKS
+    # --------------------------------------------------------
+
     results.extend(
         process_invite_tasks(
             guild_id,
@@ -824,6 +1491,10 @@ def process_all_tasks(
         )
     )
 
+
+    # --------------------------------------------------------
+    # VOICE TASKS
+    # --------------------------------------------------------
 
     results.extend(
         process_voice_tasks(
@@ -833,19 +1504,170 @@ def process_all_tasks(
     )
 
 
-    results.append(
-        process_level_tasks(
-            guild_id,
-            user_id
-        )
+    # --------------------------------------------------------
+    # LEVEL TASK
+    # --------------------------------------------------------
+
+    level_result = process_level_tasks(
+        guild_id,
+        user_id
     )
+
+
+    if level_result.get(
+        "success"
+    ):
+
+        results.append(
+            level_result
+        )
+
+
+    # --------------------------------------------------------
+    # NICKNAME TASK
+    # --------------------------------------------------------
+
+    nickname_result = process_nickname_task(
+        guild_id,
+        user_id
+    )
+
+
+    if nickname_result.get(
+        "success"
+    ):
+
+        results.append(
+            nickname_result
+        )
 
 
     return results
 
 
 # ============================================================
-# TASK DISPLAY DATA
+# GET ACTIVE TASK DISPLAY
+# ============================================================
+
+def get_active_task_display(
+    guild_id,
+    user_id,
+    period
+):
+
+    if not is_period_enabled(
+        guild_id,
+        period
+    ):
+
+        return {
+
+            "available": False,
+
+            "reason": "period_disabled",
+
+            "period": period,
+
+        }
+
+
+    task_id = get_active_task_id(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if not task_id:
+
+        return {
+
+            "available": False,
+
+            "reason": "all_completed",
+
+            "period": period,
+
+        }
+
+
+    status = get_active_task_status(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if not status:
+
+        return {
+
+            "available": False,
+
+            "reason": "task_not_found",
+
+            "period": period,
+
+        }
+
+
+    bar = progress_bar(
+        status["progress"],
+        status["target"]
+    )
+
+
+    current_index = get_current_task_index(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    total_tasks = len(
+        get_task_order(
+            period
+        )
+    )
+
+
+    return {
+
+        "available": True,
+
+        "period": period,
+
+        "task_number": current_index + 1,
+
+        "total_tasks": total_tasks,
+
+        "id": status["id"],
+
+        "name": status["name"],
+
+        "description": status["description"],
+
+        "type": status["type"],
+
+        "progress": status["progress"],
+
+        "target": status["target"],
+
+        "reward": status["reward"],
+
+        "percentage": status["percentage"],
+
+        "bar": bar,
+
+        "completed": status["completed"],
+
+        "active": True,
+
+    }
+
+
+# ============================================================
+# GET TASK DISPLAY
 # ============================================================
 
 def get_task_display(
@@ -854,56 +1676,477 @@ def get_task_display(
     period
 ):
 
-    tasks = get_all_tasks(
+    active = get_active_task_display(
+        guild_id,
+        user_id,
         period
     )
 
 
+    if not active.get(
+        "available"
+    ):
+
+        return []
+
+
+    return [
+        active
+    ]
+
+
+# ============================================================
+# GET ALL ACTIVE PERIOD TASKS
+# ============================================================
+
+def get_all_active_tasks(
+    guild_id,
+    user_id
+):
+
     output = []
 
 
-    for task_id, task in tasks.items():
+    for period in (
+        "daily",
+        "weekly",
+        "monthly",
+    ):
 
-        status = get_task_status(
+        display = get_active_task_display(
             guild_id,
             user_id,
-            task_id,
             period
         )
 
 
-        if not status:
+        if display.get(
+            "available"
+        ):
 
-            continue
-
-
-        bar = progress_bar(
-            status["progress"],
-            status["target"]
-        )
-
-
-        output.append({
-
-            "id": task_id,
-
-            "name": task["name"],
-
-            "description": task["description"],
-
-            "progress": status["progress"],
-
-            "target": status["target"],
-
-            "reward": status["reward"],
-
-            "percentage": status["percentage"],
-
-            "bar": bar,
-
-            "completed": status["completed"],
-
-        })
+            output.append(
+                display
+            )
 
 
     return output
+
+
+# ============================================================
+# GET TASK START INFORMATION
+# ============================================================
+
+def get_task_start_info(
+    guild_id,
+    user_id,
+    period
+):
+
+    display = get_active_task_display(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if not display.get(
+        "available"
+    ):
+
+        return display
+
+
+    task_type = display[
+        "type"
+    ]
+
+
+    instructions = {
+
+        "messages": (
+            "ابدأ بإرسال الرسائل في الروم المحدد."
+        ),
+
+        "images": (
+            "ابدأ بإرسال الصور حتى تصل للعدد المطلوب."
+        ),
+
+        "invites": (
+            "ابدأ بدعوة أعضاء جدد إلى السيرفر."
+        ),
+
+        "afk": (
+            "ادخل أي روم صوتي وابقَ فيه حتى يكتمل الوقت المطلوب."
+        ),
+
+        "level": (
+            "استمر في اكتساب XP حتى تصل إلى المستوى المطلوب."
+        ),
+
+        "nickname": (
+            "غيّر اسمك المستعار في السيرفر مرة واحدة."
+        ),
+
+    }
+
+
+    display[
+        "start_instruction"
+    ] = instructions.get(
+        task_type,
+        "ابدأ بتنفيذ المهمة."
+    )
+
+
+    return display
+
+
+# ============================================================
+# GET NEXT TASK
+# ============================================================
+
+def get_next_task(
+    guild_id,
+    user_id,
+    period
+):
+
+    order = get_task_order(
+        period
+    )
+
+
+    if not order:
+
+        return None
+
+
+    current_index = get_current_task_index(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    next_index = current_index + 1
+
+
+    if next_index >= len(order):
+
+        return None
+
+
+    task_id = order[
+        next_index
+    ]
+
+
+    return {
+
+        "id": task_id,
+
+        "task": get_task(
+            task_id,
+            period
+        ),
+
+        "index": next_index,
+
+        "number": next_index + 1,
+
+        "total": len(order),
+
+    }
+
+
+# ============================================================
+# TASK COMPLETION SUMMARY
+# ============================================================
+
+def get_completion_summary(
+    guild_id,
+    user_id,
+    period,
+    completed_task_id
+):
+
+    completed_task = get_task(
+        completed_task_id,
+        period
+    )
+
+
+    if not completed_task:
+
+        return {
+
+            "success": False,
+
+            "reason": "task_not_found",
+
+        }
+
+
+    next_task = get_active_task(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if next_task:
+
+        next_task_id = get_active_task_id(
+            guild_id,
+            user_id,
+            period
+        )
+
+
+        current_index = get_current_task_index(
+            guild_id,
+            user_id,
+            period
+        )
+
+
+        return {
+
+            "success": True,
+
+            "completed": True,
+
+            "completed_task_id": completed_task_id,
+
+            "completed_task": completed_task,
+
+            "reward": completed_task["reward"],
+
+            "all_completed": False,
+
+            "next_task_id": next_task_id,
+
+            "next_task": next_task,
+
+            "next_task_number": current_index + 1,
+
+            "total_tasks": len(
+                get_task_order(
+                    period
+                )
+            ),
+
+        }
+
+
+    return {
+
+        "success": True,
+
+        "completed": True,
+
+        "completed_task_id": completed_task_id,
+
+        "completed_task": completed_task,
+
+        "reward": completed_task["reward"],
+
+        "all_completed": True,
+
+        "next_task_id": None,
+
+        "next_task": None,
+
+        "next_task_number": None,
+
+        "total_tasks": len(
+            get_task_order(
+                period
+            )
+        ),
+
+    }
+
+
+# ============================================================
+# RESET TASK PERIOD
+# ============================================================
+
+def reset_task_period(
+    guild_id,
+    user_id,
+    period
+):
+
+    order = get_task_order(
+        period
+    )
+
+
+    # --------------------------------------------------------
+    # إعادة مؤشر المهمة إلى أول مهمة.
+    # --------------------------------------------------------
+
+    set_task_index(
+        guild_id,
+        user_id,
+        period,
+        0
+    )
+
+
+    # --------------------------------------------------------
+    # حذف تقدم المهام لهذه الفترة.
+    # --------------------------------------------------------
+
+    for task_id in order:
+
+        set_task_progress(
+            guild_id,
+            user_id,
+            task_id,
+            period,
+            0
+        )
+
+
+    return {
+
+        "success": True,
+
+        "period": period,
+
+        "task_count": len(
+            order
+        ),
+
+        "active_task_id": (
+            order[0]
+            if order
+            else None
+        ),
+
+    }
+
+
+# ============================================================
+# TASK COUNT
+# ============================================================
+
+def get_task_count(
+    period
+):
+
+    return len(
+        get_task_order(
+            period
+        )
+    )
+
+
+# ============================================================
+# TASK POSITION
+# ============================================================
+
+def get_task_position(
+    guild_id,
+    user_id,
+    period
+):
+
+    order = get_task_order(
+        period
+    )
+
+
+    current_index = get_current_task_index(
+        guild_id,
+        user_id,
+        period
+    )
+
+
+    if current_index >= len(order):
+
+        return {
+
+            "current": None,
+
+            "number": len(order),
+
+            "total": len(order),
+
+            "completed_all": True,
+
+        }
+
+
+    return {
+
+        "current": order[
+            current_index
+        ],
+
+        "number": current_index + 1,
+
+        "total": len(order),
+
+        "completed_all": False,
+
+    }
+
+
+# ============================================================
+# TASK SYSTEM HEALTH
+# ============================================================
+
+def get_task_system_status(
+    guild_id,
+    user_id
+):
+
+    periods = {}
+
+
+    for period in (
+        "daily",
+        "weekly",
+        "monthly",
+    ):
+
+        order = get_task_order(
+            period
+        )
+
+
+        active_id = get_active_task_id(
+            guild_id,
+            user_id,
+            period
+        )
+
+
+        periods[
+            period
+        ] = {
+
+            "enabled": is_period_enabled(
+                guild_id,
+                period
+            ),
+
+            "task_count": len(
+                order
+            ),
+
+            "active_task": active_id,
+
+            "all_completed": (
+                active_id is None
+                and bool(order)
+            ),
+
+        }
+
+
+    return periods
