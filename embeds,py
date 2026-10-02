@@ -9,7 +9,9 @@ import discord
 from datetime import datetime, timezone
 
 from tasks import (
-    get_task_display,
+    get_active_task_display,
+    get_all_active_tasks,
+    get_task_start_info,
     progress_bar,
 )
 
@@ -60,7 +62,7 @@ def create_embed(
     )
 
     embed.set_footer(
-        text="Task Bot"
+        text="Forge Tasks BOT"
     )
 
     return embed
@@ -82,7 +84,7 @@ def task_emoji(
 
         "invites": "📨",
 
-        "afk": "💤",
+        "afk": "🎙️",
 
         "level": "⭐",
 
@@ -121,6 +123,30 @@ def period_emoji(
 
 
 # ============================================================
+# PERIOD NAME
+# ============================================================
+
+def period_name(
+    period
+):
+
+    names = {
+
+        "daily": "المهمة اليومية",
+
+        "weekly": "المهمة الأسبوعية",
+
+        "monthly": "المهمة الشهرية",
+
+    }
+
+    return names.get(
+        period,
+        "المهمة"
+    )
+
+
+# ============================================================
 # TASKS EMBED
 # ============================================================
 
@@ -136,9 +162,11 @@ def tasks_embed(
         "📋 مهامك",
 
         (
-            f"أنجز المهام واحصل على "
-            f"**{currency_name} {currency_symbol}** 🪙"
-        )
+            "أنجز المهمة الحالية لفتح المهمة التالية "
+            f"واحصل على **{currency_symbol} {currency_name}**."
+        ),
+
+        COLOR_MAIN
 
     )
 
@@ -165,7 +193,7 @@ def tasks_embed(
 
     for period, title in periods:
 
-        tasks = get_task_display(
+        task = get_active_task_display(
 
             guild_id,
 
@@ -176,63 +204,85 @@ def tasks_embed(
         )
 
 
-        if not tasks:
+        # ----------------------------------------------------
+        # الفترة غير مفعلة
+        # ----------------------------------------------------
 
-            if period == "monthly":
+        if (
+            not task.get(
+                "available"
+            )
+            and task.get(
+                "reason"
+            ) == "period_disabled"
+        ):
 
-                value = (
-                    "لا توجد مهام شهرية حالياً."
-                )
+            value = "🔒 هذا النوع من المهام معطل."
 
-            else:
+        # ----------------------------------------------------
+        # جميع المهام مكتملة
+        # ----------------------------------------------------
 
-                value = (
-                    "لا توجد مهام متاحة."
-                )
+        elif (
+            not task.get(
+                "available"
+            )
+            and task.get(
+                "reason"
+            ) == "all_completed"
+        ):
 
+            value = (
+                "🎉 **أكملت جميع مهام هذه الفترة!**\n"
+                "انتظر بداية الفترة القادمة."
+            )
+
+        # ----------------------------------------------------
+        # لا توجد مهام
+        # ----------------------------------------------------
+
+        elif not task.get(
+            "available"
+        ):
+
+            value = (
+                "لا توجد مهام متاحة حالياً."
+            )
+
+        # ----------------------------------------------------
+        # المهمة الحالية
+        # ----------------------------------------------------
 
         else:
 
-            lines = []
-
-
-            for task in tasks:
-
-                emoji = task_emoji(
-                    task.get(
-                        "type",
-                        ""
-                    )
+            emoji = task_emoji(
+                task.get(
+                    "type",
+                    ""
                 )
+            )
 
 
-                if task["completed"]:
+            value = (
 
-                    status = "✅"
+                f"🚀 **المهمة "
+                f"{task['task_number']}/"
+                f"{task['total_tasks']}**\n\n"
 
-                else:
+                f"{emoji} **{task['name']}**\n"
 
-                    status = "⬜"
+                f"└ {task['description']}\n\n"
 
+                f"{task['bar']} "
+                f"`{task['progress']}/"
+                f"{task['target']}` "
+                f"**{task['percentage']}%**\n\n"
 
-                lines.append(
+                f"🎁 المكافأة: "
+                f"**{task['reward']} "
+                f"{currency_symbol} "
+                f"{currency_name}**"
 
-                    f"{status} {emoji} "
-                    f"**{task['name']}**\n"
-
-                    f"└ {task['description']}\n"
-
-                    f"└ {task['bar']} "
-                    f"`{task['progress']}/{task['target']}`\n"
-
-                    f"└ 🪙 **{task['reward']} "
-                    f"{currency_name}**"
-
-                )
-
-
-            value = "\n\n".join(
-                lines
             )
 
 
@@ -250,13 +300,252 @@ def tasks_embed(
     embed.set_footer(
 
         text=(
-            "Task Bot • أنجز المهام وارفع مستواك"
+            "Forge Tasks BOT • أكمل المهمة الحالية لفتح التالية"
         )
 
     )
 
 
     return embed
+
+
+# ============================================================
+# SINGLE ACTIVE TASK EMBED
+# ============================================================
+
+def active_task_embed(
+    guild_id,
+    user_id,
+    period,
+    currency_name,
+    currency_symbol
+):
+
+    task = get_active_task_display(
+
+        guild_id,
+
+        user_id,
+
+        period
+
+    )
+
+
+    title = (
+        f"{period_emoji(period)} "
+        f"{period_name(period)}"
+    )
+
+
+    # --------------------------------------------------------
+    # PERIOD DISABLED
+    # --------------------------------------------------------
+
+    if (
+        not task.get(
+            "available"
+        )
+        and task.get(
+            "reason"
+        ) == "period_disabled"
+    ):
+
+        return create_embed(
+
+            title,
+
+            "🔒 هذا النوع من المهام معطل حالياً.",
+
+            COLOR_WARNING
+
+        )
+
+
+    # --------------------------------------------------------
+    # ALL COMPLETED
+    # --------------------------------------------------------
+
+    if (
+        not task.get(
+            "available"
+        )
+        and task.get(
+            "reason"
+        ) == "all_completed"
+    ):
+
+        return create_embed(
+
+            title,
+
+            (
+                "🎉 **أكملت جميع مهام هذه الفترة!**\n\n"
+                "ترقب بداية الفترة القادمة للحصول على مهام جديدة."
+            ),
+
+            COLOR_SUCCESS
+
+        )
+
+
+    # --------------------------------------------------------
+    # NO TASK
+    # --------------------------------------------------------
+
+    if not task.get(
+        "available"
+    ):
+
+        return create_embed(
+
+            title,
+
+            "لا توجد مهمة متاحة حالياً.",
+
+            COLOR_WARNING
+
+        )
+
+
+    emoji = task_emoji(
+        task["type"]
+    )
+
+
+    embed = create_embed(
+
+        f"{emoji} {task['name']}",
+
+        task["description"],
+
+        COLOR_MAIN
+
+    )
+
+
+    embed.add_field(
+
+        name="📊 التقدم",
+
+        value=(
+
+            f"{task['bar']}\n"
+
+            f"**{task['progress']} / "
+            f"{task['target']}** "
+
+            f"({task['percentage']}%)"
+
+        ),
+
+        inline=False
+
+    )
+
+
+    embed.add_field(
+
+        name="🎁 المكافأة",
+
+        value=(
+
+            f"**{task['reward']} "
+            f"{currency_symbol} "
+            f"{currency_name}**"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📋 ترتيب المهمة",
+
+        value=(
+
+            f"**{task['task_number']} / "
+            f"{task['total_tasks']}**"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="🚀 كيف تبدأ؟",
+
+        value=get_task_start_text(
+            task["type"]
+        ),
+
+        inline=False
+
+    )
+
+
+    embed.set_footer(
+
+        text=(
+            "أكمل هذه المهمة لفتح المهمة التالية."
+        )
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# TASK START TEXT
+# ============================================================
+
+def get_task_start_text(
+    task_type
+):
+
+    instructions = {
+
+        "messages": (
+            "💬 أرسل الرسائل في الروم المحدد."
+        ),
+
+        "images": (
+            "🖼️ أرسل الصور حتى تصل للعدد المطلوب."
+        ),
+
+        "invites": (
+            "📨 ادعُ أعضاء جدد إلى السيرفر."
+        ),
+
+        "afk": (
+            "🎙️ ادخل أي روم صوتي وابقَ فيه حتى يكتمل الوقت المطلوب."
+        ),
+
+        "level": (
+            "⭐ استمر في اكتساب XP حتى تصل إلى المستوى المطلوب."
+        ),
+
+        "nickname": (
+            "✏️ غيّر اسمك المستعار في السيرفر مرة واحدة."
+        ),
+
+    }
+
+
+    return instructions.get(
+
+        task_type,
+
+        "📋 ابدأ بتنفيذ المهمة."
+
+    )
 
 
 # ============================================================
@@ -297,11 +586,14 @@ def profile_embed(
 
 
     filled = max(
+
         0,
+
         min(
             filled,
             10
         )
+
     )
 
 
@@ -449,7 +741,12 @@ def profile_embed(
 
         name="🏅 العملة",
 
-        value=currency_name,
+        value=(
+
+            f"{currency_symbol} "
+            f"{currency_name}"
+
+        ),
 
         inline=True
 
@@ -607,7 +904,10 @@ def top_embed(
 def task_completed_embed(
     task,
     currency_name,
-    currency_symbol
+    currency_symbol,
+    next_task=None,
+    next_task_number=None,
+    total_tasks=None
 ):
 
     embed = create_embed(
@@ -632,20 +932,85 @@ def task_completed_embed(
     )
 
 
-    embed.add_field(
+    # --------------------------------------------------------
+    # NEXT TASK
+    # --------------------------------------------------------
 
-        name="🚀 الخطوة التالية",
+    if next_task:
 
-        value=(
+        emoji = task_emoji(
+            next_task.get(
+                "type",
+                ""
+            )
+        )
 
-            "افتح `/tasks` "
-            "وشوف باقي المهام."
 
-        ),
+        if (
+            next_task_number is not None
+            and total_tasks is not None
+        ):
 
-        inline=False
+            position = (
+                f"{next_task_number}/{total_tasks}"
+            )
 
-    )
+        else:
+
+            position = ""
+
+
+        embed.add_field(
+
+            name="🔓 المهمة التالية",
+
+            value=(
+
+                f"{emoji} **{next_task['name']}** "
+                f"`{position}`\n"
+
+                f"{next_task['description']}\n\n"
+
+                f"🎁 المكافأة: "
+                f"**{next_task['reward']} "
+                f"{currency_name} "
+                f"{currency_symbol}**"
+
+            ),
+
+            inline=False
+
+        )
+
+
+        embed.add_field(
+
+            name="🚀 ابدأ الآن",
+
+            value=(
+                "استخدم `/tasks` لعرض تقدم المهمة الجديدة."
+            ),
+
+            inline=False
+
+        )
+
+    else:
+
+        embed.add_field(
+
+            name="🏆 اكتملت الفترة",
+
+            value=(
+
+                "🎊 **أكملت جميع مهام هذه الفترة!**\n"
+                "انتظر بداية الفترة القادمة لمهام جديدة."
+
+            ),
+
+            inline=False
+
+        )
 
 
     return embed
@@ -658,23 +1023,94 @@ def task_completed_embed(
 def level_up_embed(
     member,
     old_level,
-    new_level
+    new_level,
+    mention=True,
+    message=None
 ):
+
+    mention_text = (
+
+        member.mention
+
+        if mention
+
+        else member.display_name
+
+    )
+
+
+    default_message = (
+
+        f"مبروك {mention_text}! 🔥\n\n"
+
+        f"ارتفع مستواك من "
+        f"**Level {old_level}** "
+        f"إلى "
+        f"**Level {new_level}** ⭐"
+
+    )
+
+
+    description = (
+
+        message
+
+        if message
+
+        else default_message
+
+    )
+
+
+    # --------------------------------------------------------
+    # استبدال المتغيرات في الرسالة المخصصة
+    # --------------------------------------------------------
+
+    description = description.replace(
+
+        "{mention}",
+
+        mention_text
+
+    )
+
+
+    description = description.replace(
+
+        "{user}",
+
+        member.display_name
+
+    )
+
+
+    description = description.replace(
+
+        "{level}",
+
+        str(
+            new_level
+        )
+
+    )
+
+
+    description = description.replace(
+
+        "{old_level}",
+
+        str(
+            old_level
+        )
+
+    )
+
 
     embed = create_embed(
 
         "🎊 Level Up!",
 
-        (
-
-            f"مبروك {member.mention}! 🔥\n\n"
-
-            f"ارتفع مستواك من "
-            f"**Level {old_level}** "
-            f"إلى "
-            f"**Level {new_level}** ⭐"
-
-        ),
+        description,
 
         COLOR_LEVEL
 
@@ -693,7 +1129,9 @@ def level_up_embed(
         name="⭐ المستوى الجديد",
 
         value=(
+
             f"**Level {new_level}**"
+
         ),
 
         inline=False
@@ -735,6 +1173,17 @@ def coins_added_embed(
     )
 
 
+    embed.add_field(
+
+        name="💰 العملة",
+
+        value=currency_name,
+
+        inline=False
+
+    )
+
+
     return embed
 
 
@@ -765,6 +1214,17 @@ def coins_removed_embed(
         ),
 
         COLOR_WARNING
+
+    )
+
+
+    embed.add_field(
+
+        name="💰 العملة",
+
+        value=currency_name,
+
+        inline=False
 
     )
 
@@ -802,7 +1262,9 @@ def exchange_embed(
         name="🪙 الكوينز المستخدمة",
 
         value=(
+
             f"**{coins_spent}**"
+
         ),
 
         inline=True
@@ -919,14 +1381,14 @@ def setup_embed(
 
     embed = create_embed(
 
-        "⚙️ إعدادات Task Bot",
+        "⚙️ إعدادات Forge Tasks BOT",
 
         (
 
-            "تم تحديث إعدادات السيرفر.\n\n"
+            "لوحة إعدادات السيرفر.\n\n"
 
-            "يمكنك التحكم في نظام المهام "
-            "والعملات والـXP من إعدادات البوت."
+            "استخدم أزرار وقوائم الإعدادات للتحكم "
+            "في المهام والـXP والعملات والتنبيهات."
 
         ),
 
@@ -940,7 +1402,13 @@ def setup_embed(
         name="🌐 اللغة",
 
         value=(
+
             guild["language"]
+
+            if guild["language"]
+
+            else "ar"
+
         ),
 
         inline=True
@@ -973,6 +1441,44 @@ def setup_embed(
             f"<#{guild['message_channel']}>"
 
             if guild["message_channel"]
+
+            else "غير محدد"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📋 روم المهام",
+
+        value=(
+
+            f"<#{guild['task_channel']}>"
+
+            if guild["task_channel"]
+
+            else "غير محدد"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📝 روم السجلات",
+
+        value=(
+
+            f"<#{guild['log_channel']}>"
+
+            if guild["log_channel"]
 
             else "غير محدد"
 
@@ -1043,6 +1549,44 @@ def setup_embed(
     )
 
 
+    embed.add_field(
+
+        name="🎊 رسائل Level Up",
+
+        value=(
+
+            "مفعلة"
+
+            if guild["level_up_enabled"]
+
+            else "معطلة"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📣 Mention عند Level Up",
+
+        value=(
+
+            "مفعل"
+
+            if guild["level_up_mention"]
+
+            else "معطل"
+
+        ),
+
+        inline=True
+
+    )
+
+
     return embed
 
 
@@ -1058,12 +1602,12 @@ def reminder_embed(
 
     embed = create_embed(
 
-        "🔔 تذكير بالمهام",
+        "🔔 تذكير بالمهمة",
 
         (
 
-            "عندك مهام لسا ما خلصتها! 👀\n"
-            "لا تضيع المكافآت."
+            "عندك مهمة لم تكتمل بعد! 👀\n"
+            "أكملها للحصول على المكافأة."
 
         ),
 
@@ -1077,19 +1621,32 @@ def reminder_embed(
 
     for task in tasks:
 
-        if task["completed"]:
+        if task.get(
+            "completed"
+        ):
 
             continue
 
 
+        emoji = task_emoji(
+            task.get(
+                "type",
+                ""
+            )
+        )
+
+
         lines.append(
 
-            f"⬜ **{task['name']}**\n"
+            f"{emoji} **{task['name']}**\n"
+
+            f"└ {task['description']}\n"
 
             f"└ {task['bar']} "
-            f"`{task['progress']}/{task['target']}`\n"
+            f"`{task['progress']}/"
+            f"{task['target']}`\n"
 
-            f"└ 🪙 {task['reward']} "
+            f"└ 🎁 {task['reward']} "
             f"{currency_symbol}"
 
         )
@@ -1098,14 +1655,14 @@ def reminder_embed(
     if not lines:
 
         embed.description = (
-            "🎉 ما عندك مهام ناقصة!"
+            "🎉 ما عندك مهمة ناقصة!"
         )
 
     else:
 
         embed.add_field(
 
-            name="📋 المهام المتبقية",
+            name="📋 المهمة الحالية",
 
             value="\n\n".join(
                 lines
@@ -1117,6 +1674,182 @@ def reminder_embed(
 
 
     return embed
+
+
+# ============================================================
+# TASK UNLOCKED EMBED
+# ============================================================
+
+def task_unlocked_embed(
+    task,
+    currency_name,
+    currency_symbol,
+    task_number=None,
+    total_tasks=None
+):
+
+    emoji = task_emoji(
+        task.get(
+            "type",
+            ""
+        )
+    )
+
+
+    if (
+        task_number is not None
+        and total_tasks is not None
+    ):
+
+        position = (
+            f"المهمة {task_number}/{total_tasks}"
+        )
+
+    else:
+
+        position = (
+            "المهمة التالية"
+        )
+
+
+    embed = create_embed(
+
+        "🔓 مهمة جديدة!",
+
+        (
+
+            f"تم فتح {position}!\n\n"
+
+            f"{emoji} **{task['name']}**\n"
+
+            f"{task['description']}"
+
+        ),
+
+        COLOR_MAIN
+
+    )
+
+
+    embed.add_field(
+
+        name="🎁 المكافأة",
+
+        value=(
+
+            f"**{task['reward']} "
+            f"{currency_symbol} "
+            f"{currency_name}**"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="🚀 ابدأ الآن",
+
+        value=get_task_start_text(
+            task["type"]
+        ),
+
+        inline=False
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# ALL TASKS COMPLETED EMBED
+# ============================================================
+
+def all_tasks_completed_embed(
+    period,
+    currency_name,
+    currency_symbol
+):
+
+    embed = create_embed(
+
+        "🏆 اكتملت المهام!",
+
+        (
+
+            f"🎉 أكملت جميع "
+            f"{period_name(period)}!\n\n"
+
+            "أنجزت كل المهام المتاحة لهذه الفترة."
+
+        ),
+
+        COLOR_GOLD
+
+    )
+
+
+    embed.add_field(
+
+        name="🎁 المكافآت",
+
+        value=(
+
+            f"تم جمع مكافآت المهام "
+            f"بعملة **{currency_name} "
+            f"{currency_symbol}**."
+
+        ),
+
+        inline=False
+
+    )
+
+
+    embed.add_field(
+
+        name="⏳ ماذا بعد؟",
+
+        value=(
+
+            "انتظر بداية الفترة القادمة "
+            "للحصول على مجموعة مهام جديدة."
+
+        ),
+
+        inline=False
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# SETUP SAVED EMBED
+# ============================================================
+
+def setup_saved_embed(
+    setting_name,
+    setting_value
+):
+
+    return success_embed(
+
+        "تم حفظ الإعداد",
+
+        (
+
+            f"تم تحديث **{setting_name}** بنجاح.\n\n"
+
+            f"القيمة الجديدة: **{setting_value}**"
+
+        )
+
+    )
 
 
 # ============================================================
@@ -1135,9 +1868,11 @@ def format_seconds(
 
     hours = seconds // 3600
 
+
     minutes = (
         seconds % 3600
     ) // 60
+
 
     remaining = (
         seconds % 60
@@ -1147,19 +1882,25 @@ def format_seconds(
     if hours:
 
         return (
+
             f"{hours} ساعة "
             f"{minutes} دقيقة"
+
         )
 
 
     if minutes:
 
         return (
+
             f"{minutes} دقيقة "
             f"{remaining} ثانية"
+
         )
 
 
     return (
+
         f"{remaining} ثانية"
+
     )
