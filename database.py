@@ -633,6 +633,12 @@ def initialize_database(
 
     add_column_if_missing(
         "guilds",
+        "log_channel",
+        "INTEGER DEFAULT NULL"
+    )
+
+    add_column_if_missing(
+        "guilds",
         "daily_enabled",
         "INTEGER DEFAULT 1"
     )
@@ -688,6 +694,12 @@ def initialize_database(
     add_column_if_missing(
         "users",
         "last_xp_message",
+        "TEXT"
+    )
+
+    add_column_if_missing(
+        "users",
+        "created_at",
         "TEXT"
     )
 
