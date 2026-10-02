@@ -154,16 +154,24 @@ def tasks_embed(
     guild_id,
     user_id,
     currency_name,
-    currency_symbol
+    currency_symbol,
+    language="ar"
 ):
+
+    english = language == "en"
 
     embed = create_embed(
 
-        "📋 مهامك",
+        "📋 Your Tasks" if english else "📋 مهامك",
 
         (
-            "أنجز المهمة الحالية لفتح المهمة التالية "
-            f"واحصل على **{currency_symbol} {currency_name}**."
+            (
+                "Complete the current task to unlock the next one and earn "
+                f"**{currency_symbol} {currency_name}**."
+                if english else
+                "أنجز المهمة الحالية لفتح المهمة التالية "
+                f"واحصل على **{currency_symbol} {currency_name}**."
+            )
         ),
 
         COLOR_MAIN
@@ -559,14 +567,17 @@ def profile_embed(
     currency_symbol,
     current_xp,
     required_xp,
-    percentage
+    percentage,
+    language="ar"
 ):
+
+    english = language == "en"
 
     embed = create_embed(
 
         f"👤 {member.display_name}",
 
-        "إحصائيات حسابك وتقدمك",
+        "Your account statistics and progress" if english else "إحصائيات حسابك وتقدمك",
 
         COLOR_MAIN
 
@@ -610,7 +621,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="🪙 الرصيد",
+        name="🪙 Balance" if english else "🪙 الرصيد",
 
         value=(
 
@@ -626,7 +637,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="⭐ المستوى",
+        name="⭐ Level" if english else "⭐ المستوى",
 
         value=(
 
@@ -658,7 +669,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="📊 التقدم",
+        name="📊 Progress" if english else "📊 التقدم",
 
         value=(
 
@@ -674,7 +685,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="💬 الرسائل",
+        name="💬 Messages" if english else "💬 الرسائل",
 
         value=str(
             user["messages"]
@@ -687,7 +698,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="🖼️ الصور",
+        name="🖼️ Images" if english else "🖼️ الصور",
 
         value=str(
             user["images"]
@@ -700,7 +711,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="📨 الدعوات",
+        name="📨 Invites" if english else "📨 الدعوات",
 
         value=str(
             user["invites"]
@@ -713,7 +724,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="🎙️ وقت الصوت",
+        name="🎙️ Voice time" if english else "🎙️ وقت الصوت",
 
         value=format_seconds(
             user["voice_seconds"]
@@ -726,7 +737,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="💤 وقت AFK",
+        name="💤 AFK time" if english else "💤 وقت AFK",
 
         value=format_seconds(
             user["afk_seconds"]
@@ -739,7 +750,7 @@ def profile_embed(
 
     embed.add_field(
 
-        name="🏅 العملة",
+        name="🏅 Currency" if english else "🏅 العملة",
 
         value=(
 
@@ -763,20 +774,22 @@ def profile_embed(
 def balance_embed(
     user,
     currency_name,
-    currency_symbol
+    currency_symbol,
+    language="ar"
 ):
+
+    english = language == "en"
 
     embed = create_embed(
 
-        "🪙 رصيدك",
+        "🪙 Your Balance" if english else "🪙 رصيدك",
 
         (
-
-            f"لديك **{user['coins']}** "
-            f"{currency_symbol}\n\n"
-
+            f"You have **{user['coins']}** {currency_symbol}\n\n"
+            f"Currency: **{currency_name}**"
+            if english else
+            f"لديك **{user['coins']}** {currency_symbol}\n\n"
             f"العملة: **{currency_name}**"
-
         ),
 
         COLOR_GOLD
@@ -794,16 +807,19 @@ def balance_embed(
 def top_embed(
     users,
     guild,
-    members
+    members,
+    language="ar"
 ):
+
+    english = language == "en"
 
     embed = create_embed(
 
         "🏆 Top 10",
 
         (
-            "أعلى الأعضاء حسب "
-            "الرصيد الحالي."
+            "Top members by current balance."
+            if english else "أعلى الأعضاء حسب الرصيد الحالي."
         ),
 
         COLOR_GOLD
@@ -869,7 +885,7 @@ def top_embed(
     if not lines:
 
         lines.append(
-            "لا يوجد أعضاء في التوب حالياً."
+            "No members on the leaderboard yet." if english else "لا يوجد أعضاء في التوب حالياً."
         )
 
 
@@ -880,12 +896,11 @@ def top_embed(
 
     embed.add_field(
 
-        name="📊 الترتيب",
+        name="📊 Ranking" if english else "📊 الترتيب",
 
         value=(
 
-            "يتم الترتيب حسب "
-            "**الكوينز**."
+            "Ranked by **coins**." if english else "يتم الترتيب حسب **الكوينز**."
 
         ),
 

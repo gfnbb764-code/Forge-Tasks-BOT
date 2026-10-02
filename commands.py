@@ -1,3 +1,5 @@
+import logging
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -183,7 +185,9 @@ class SetupPanelView(
 
         await interaction.response.send_message(
             embed=success_embed(
-                "تم تغيير اللغة",
+                "Language updated" if value == "en" else "تم تغيير اللغة",
+                f"Bot language is now **{name}**."
+                if value == "en" else
                 f"لغة البوت الآن: **{name}**."
             ),
             ephemeral=True
@@ -582,7 +586,9 @@ class SetupGroup(
 
         await interaction.response.send_message(
             embed=success_embed(
-                "تم تغيير اللغة",
+                "Language updated" if language.value == "en" else "تم تغيير اللغة",
+                f"Bot language changed to **{language.name}**."
+                if language.value == "en" else
                 f"تم تغيير لغة البوت إلى **{language.name}**."
             ),
             ephemeral=True
@@ -1089,10 +1095,13 @@ class CommandManager:
             user_id
         )
 
+        guild = get_guild(guild_id)
         embed = tasks_embed(
             guild_id,
             user_id,
-            user
+            guild["currency_name"],
+            guild["currency_symbol"],
+            language=guild["language"],
         )
 
         await interaction.response.send_message(
@@ -1145,12 +1154,17 @@ class CommandManager:
             current_level
         )
 
+        guild = get_guild(guild_id)
+        percentage = round((current_xp / next_xp) * 100) if next_xp else 0
         embed = profile_embed(
             interaction.user,
             user,
-            current_level,
+            guild["currency_name"],
+            guild["currency_symbol"],
             current_xp,
-            next_xp
+            next_xp,
+            percentage,
+            language=guild["language"],
         )
 
         await interaction.response.send_message(
@@ -1184,9 +1198,12 @@ class CommandManager:
             user_id
         )
 
+        guild = get_guild(guild_id)
         embed = balance_embed(
-            interaction.user,
-            user
+            user,
+            guild["currency_name"],
+            guild["currency_symbol"],
+            language=guild["language"],
         )
 
         await interaction.response.send_message(
@@ -1214,10 +1231,9 @@ class CommandManager:
             limit=10
         )
 
-        embed = top_embed(
-            interaction.guild,
-            users
-        )
+        guild = get_guild(guild_id)
+        members = {member.id: member for member in interaction.guild.members}
+        embed = top_embed(users, guild, members, language=guild["language"])
 
         await interaction.response.send_message(
             embed=embed
@@ -1276,14 +1292,23 @@ class CommandManager:
 
             return
 
-        result = exchange_coins(
-            guild_id,
-            user_id,
-            currency_id,
-            amount
-        )
+        amount = min(amount, 100)
+        user = get_user(guild_id, user_id)
+        if not user or user["coins"] < currency["coins_required"] * amount:
+            await interaction.response.send_message(
+                embed=error_embed(
+                    "Insufficient balance" if get_guild(guild_id)["language"] == "en" else "فشل التحويل",
+                    "You do not have enough coins for this amount."
+                    if get_guild(guild_id)["language"] == "en" else
+                    "ليس لديك رصيد كافٍ لإتمام الكمية المطلوبة."
+                ),
+                ephemeral=True,
+            )
+            return
+        results = [exchange_coins(guild_id, user_id, currency_id) for _ in range(amount)]
+        result = results[-1]
 
-        if not result:
+        if not result[0]:
 
             await interaction.response.send_message(
                 embed=error_embed(
@@ -1295,12 +1320,9 @@ class CommandManager:
 
             return
 
-        embed = exchange_embed(
-            interaction.user,
-            currency,
-            amount,
-            result
-        )
+        coins_spent = currency["coins_required"] * amount
+        external_amount = result[1] * amount
+        embed = exchange_embed(currency, coins_spent, external_amount)
 
         await interaction.response.send_message(
             embed=embed
@@ -1316,17 +1338,20 @@ class CommandManager:
         interaction: discord.Interaction
     ):
 
+        language = get_guild(interaction.guild.id)["language"]
+        english = language == "en"
         embed = discord.Embed(
             title="🤖 Forge Tasks BOT",
             description=(
-                "نظام المهام والمستويات والمكافآت "
-                "والاقتصاد للسيرفر."
+                "Tasks, levels, rewards and server economy."
+                if english else
+                "نظام المهام والمستويات والمكافآت والاقتصاد للسيرفر."
             ),
             color=discord.Color.blurple()
         )
 
         embed.add_field(
-            name="📋 المهام",
+            name="📋 Tasks" if english else "📋 المهام",
             value=(
                 "`/tasks` — عرض المهمة الحالية\n"
                 "المهام تُفتح بالتسلسل، وبعد إكمال المهمة "
@@ -1336,7 +1361,7 @@ class CommandManager:
         )
 
         embed.add_field(
-            name="👤 الحساب",
+            name="👤 Account" if english else "👤 الحساب",
             value=(
                 "`/profile` — ملفك الشخصي\n"
                 "`/balance` — رصيدك\n"
@@ -1346,7 +1371,7 @@ class CommandManager:
         )
 
         embed.add_field(
-            name="💱 الاقتصاد",
+            name="💱 Economy" if english else "💱 الاقتصاد",
             value=(
                 "`/exchange` — تحويل العملات"
             ),
@@ -1354,7 +1379,7 @@ class CommandManager:
         )
 
         embed.add_field(
-            name="⚙️ الإدارة",
+            name="⚙️ Administration" if english else "⚙️ الإدارة",
             value=(
                 "`/setup panel` — لوحة الإعدادات\n"
                 "`/setup language` — اللغة\n"
@@ -1467,6 +1492,13 @@ async def setup_error_handler(
     error: app_commands.AppCommandError
 ):
 
+    logging.getLogger("forge_tasks").exception(
+        "Unhandled application command error",
+        exc_info=(type(error), error, error.__traceback__),
+    )
+
+    original = getattr(error, "original", error)
+
     if isinstance(
         error,
         app_commands.errors.MissingPermissions
@@ -1494,6 +1526,13 @@ async def setup_error_handler(
 
         message = (
             "لا تملك الرتبة المطلوبة."
+        )
+
+    elif isinstance(original, (ValueError, TypeError)):
+
+        message = (
+            "تعذر تنفيذ الطلب بسبب بيانات غير صالحة. "
+            "تحقق من الخيارات وحاول مرة أخرى."
         )
 
     else:
