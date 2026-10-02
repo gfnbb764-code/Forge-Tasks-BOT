@@ -1,9 +1,12 @@
 # ============================================================
 # TASK BOT — MAIN.PY
+# Forge Tasks BOT
 # Discord Tasks / Coins / XP / Levels
 # Python 3.11+
 # discord.py 2.6+
 # ============================================================
+
+from __future__ import annotations
 
 import os
 import sqlite3
@@ -29,20 +32,125 @@ if not TOKEN:
     )
 
 
-DATABASE = "data/tasks.db"
+DATABASE = os.getenv(
+    "DATABASE_PATH",
+    "data/tasks.db"
+)
+
+
+DEFAULT_LANGUAGE = os.getenv(
+    "DEFAULT_LANGUAGE",
+    "ar"
+)
+
+DEFAULT_CURRENCY = os.getenv(
+    "DEFAULT_CURRENCY",
+    "Coins"
+)
+
+DEFAULT_CURRENCY_SYMBOL = os.getenv(
+    "DEFAULT_CURRENCY_SYMBOL",
+    "🪙"
+)
+
+XP_ENABLED_DEFAULT = (
+    os.getenv(
+        "XP_ENABLED",
+        "true"
+    ).lower() == "true"
+)
+
+XP_PER_MESSAGE = int(
+    os.getenv(
+        "XP_PER_MESSAGE",
+        "5"
+    )
+)
+
+XP_PER_IMAGE = int(
+    os.getenv(
+        "XP_PER_IMAGE",
+        "10"
+    )
+)
+
+XP_PER_VOICE_MINUTE = int(
+    os.getenv(
+        "XP_PER_VOICE_MINUTE",
+        "2"
+    )
+)
+
+REMINDERS_ENABLED_DEFAULT = (
+    os.getenv(
+        "REMINDERS_ENABLED",
+        "true"
+    ).lower() == "true"
+)
+
+DAILY_TASKS_ENABLED_DEFAULT = (
+    os.getenv(
+        "DAILY_TASKS_ENABLED",
+        "true"
+    ).lower() == "true"
+)
+
+WEEKLY_TASKS_ENABLED_DEFAULT = (
+    os.getenv(
+        "WEEKLY_TASKS_ENABLED",
+        "true"
+    ).lower() == "true"
+)
+
+MONTHLY_TASKS_ENABLED_DEFAULT = (
+    os.getenv(
+        "MONTHLY_TASKS_ENABLED",
+        "false"
+    ).lower() == "true"
+)
+
+LEVEL_UP_ENABLED_DEFAULT = (
+    os.getenv(
+        "LEVEL_UP_ENABLED",
+        "true"
+    ).lower() == "true"
+)
+
+LEVEL_UP_MENTION_DEFAULT = (
+    os.getenv(
+        "LEVEL_UP_MENTION",
+        "true"
+    ).lower() == "true"
+)
+
+LEVEL_UP_MESSAGE_DEFAULT = os.getenv(
+    "LEVEL_UP_MESSAGE",
+    "🎉 مبروك {mention}! وصلت إلى المستوى {level}!"
+)
 
 
 # ============================================================
 # DATABASE
 # ============================================================
 
-os.makedirs("data", exist_ok=True)
+os.makedirs(
+    os.path.dirname(DATABASE) or ".",
+    exist_ok=True
+)
 
-db = sqlite3.connect(DATABASE)
+db = sqlite3.connect(
+    DATABASE,
+    check_same_thread=False
+)
+
 db.row_factory = sqlite3.Row
 
 cursor = db.cursor()
 
+
+# ============================================================
+# DATABASE TABLES
+# ============================================================
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS guilds (
@@ -54,12 +162,21 @@ CREATE TABLE IF NOT EXISTS guilds (
     currency_symbol TEXT DEFAULT '🪙',
 
     message_channel INTEGER DEFAULT NULL,
+    notification_channel INTEGER DEFAULT NULL,
 
     daily_enabled INTEGER DEFAULT 1,
     weekly_enabled INTEGER DEFAULT 1,
-    monthly_enabled INTEGER DEFAULT 1,
+    monthly_enabled INTEGER DEFAULT 0,
 
     xp_enabled INTEGER DEFAULT 1,
+
+    reminders_enabled INTEGER DEFAULT 1,
+
+    level_up_enabled INTEGER DEFAULT 1,
+    level_up_mention INTEGER DEFAULT 1,
+
+    level_up_message TEXT
+        DEFAULT '🎉 مبروك {mention}! وصلت إلى المستوى {level}!',
 
     created_at TEXT
 )
@@ -85,8 +202,12 @@ CREATE TABLE IF NOT EXISTS users (
     afk_seconds INTEGER DEFAULT 0,
 
     last_message TEXT,
+    last_xp TEXT,
 
-    PRIMARY KEY (guild_id, user_id)
+    PRIMARY KEY (
+        guild_id,
+        user_id
+    )
 )
 """)
 
@@ -103,7 +224,10 @@ CREATE TABLE IF NOT EXISTS currencies (
     coins_required INTEGER,
     external_amount INTEGER,
 
-    UNIQUE(guild_id, name)
+    UNIQUE(
+        guild_id,
+        name
+    )
 )
 """)
 
@@ -129,6 +253,133 @@ CREATE TABLE IF NOT EXISTS completed_tasks (
 """)
 
 
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS task_progress (
+    guild_id INTEGER,
+    user_id INTEGER,
+
+    task_id TEXT,
+    period TEXT,
+
+    progress INTEGER DEFAULT 0,
+
+    updated_at TEXT,
+
+    PRIMARY KEY (
+        guild_id,
+        user_id,
+        task_id,
+        period
+    )
+)
+""")
+
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS task_state (
+    guild_id INTEGER,
+    user_id INTEGER,
+
+    period TEXT,
+
+    current_index INTEGER DEFAULT 0,
+
+    period_key TEXT,
+
+    updated_at TEXT,
+
+    PRIMARY KEY (
+        guild_id,
+        user_id,
+        period
+    )
+)
+""")
+
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS invite_cache (
+    guild_id INTEGER,
+    invite_code TEXT,
+
+    uses INTEGER DEFAULT 0,
+
+    PRIMARY KEY (
+        guild_id,
+        invite_code
+    )
+)
+""")
+
+
+# ============================================================
+# DATABASE MIGRATION
+# ============================================================
+
+def add_column_if_missing(
+    table,
+    column,
+    definition
+):
+
+    cursor.execute(
+        f"PRAGMA table_info({table})"
+    )
+
+    columns = [
+        row["name"]
+        for row in cursor.fetchall()
+    ]
+
+    if column not in columns:
+
+        cursor.execute(
+            f"""
+            ALTER TABLE {table}
+            ADD COLUMN {column} {definition}
+            """
+        )
+
+        db.commit()
+
+
+add_column_if_missing(
+    "guilds",
+    "notification_channel",
+    "INTEGER DEFAULT NULL"
+)
+
+add_column_if_missing(
+    "guilds",
+    "reminders_enabled",
+    "INTEGER DEFAULT 1"
+)
+
+add_column_if_missing(
+    "guilds",
+    "level_up_enabled",
+    "INTEGER DEFAULT 1"
+)
+
+add_column_if_missing(
+    "guilds",
+    "level_up_mention",
+    "INTEGER DEFAULT 1"
+)
+
+add_column_if_missing(
+    "guilds",
+    "level_up_message",
+    "TEXT DEFAULT '🎉 مبروك {mention}! وصلت إلى المستوى {level}!'"
+)
+
+add_column_if_missing(
+    "users",
+    "last_xp",
+    "TEXT DEFAULT NULL"
+)
+
+
 db.commit()
 
 
@@ -152,21 +403,41 @@ class TaskBot(commands.Bot):
 
         super().__init__(
             command_prefix="!",
-            intents=intents
+            intents=intents,
+            help_command=None
         )
 
     async def setup_hook(self):
 
         await self.tree.sync()
 
-        voice_tracker.start()
+        if not voice_tracker.is_running():
 
-        print("========================================")
-        print(" TASK BOT")
-        print("========================================")
-        print("Bot started successfully.")
-        print("Slash commands synchronized.")
-        print("========================================")
+            voice_tracker.start()
+
+        print(
+            "========================================"
+        )
+
+        print(
+            " FORGE TASKS BOT"
+        )
+
+        print(
+            "========================================"
+        )
+
+        print(
+            "Bot started successfully."
+        )
+
+        print(
+            "Slash commands synchronized."
+        )
+
+        print(
+            "========================================"
+        )
 
 
 bot = TaskBot()
@@ -178,171 +449,1337 @@ bot = TaskBot()
 
 def now():
 
-    return datetime.now(timezone.utc)
+    return datetime.now(
+        timezone.utc
+    )
 
 
-def get_guild(guild_id):
+def current_period_key(
+    period
+):
+
+    current = now()
+
+    if period == "daily":
+
+        return current.strftime(
+            "%Y-%m-%d"
+        )
+
+    if period == "weekly":
+
+        return current.strftime(
+            "%Y-W%W"
+        )
+
+    if period == "monthly":
+
+        return current.strftime(
+            "%Y-%m"
+        )
+
+    return current.strftime(
+        "%Y-%m-%d"
+    )
+
+
+def get_guild(
+    guild_id
+):
 
     cursor.execute(
-        "SELECT * FROM guilds WHERE guild_id = ?",
-        (guild_id,)
+        """
+        SELECT *
+        FROM guilds
+        WHERE guild_id = ?
+        """,
+        (
+            guild_id,
+        )
     )
 
     row = cursor.fetchone()
 
     if row:
+
         return row
 
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO guilds (
             guild_id,
+            language,
+            currency_name,
+            currency_symbol,
+            daily_enabled,
+            weekly_enabled,
+            monthly_enabled,
+            xp_enabled,
+            reminders_enabled,
+            level_up_enabled,
+            level_up_mention,
+            level_up_message,
             created_at
         )
-        VALUES (?, ?)
-    """, (
-        guild_id,
-        now().isoformat()
-    ))
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            guild_id,
+            DEFAULT_LANGUAGE,
+            DEFAULT_CURRENCY,
+            DEFAULT_CURRENCY_SYMBOL,
+            int(
+                DAILY_TASKS_ENABLED_DEFAULT
+            ),
+            int(
+                WEEKLY_TASKS_ENABLED_DEFAULT
+            ),
+            int(
+                MONTHLY_TASKS_ENABLED_DEFAULT
+            ),
+            int(
+                XP_ENABLED_DEFAULT
+            ),
+            int(
+                REMINDERS_ENABLED_DEFAULT
+            ),
+            int(
+                LEVEL_UP_ENABLED_DEFAULT
+            ),
+            int(
+                LEVEL_UP_MENTION_DEFAULT
+            ),
+            LEVEL_UP_MESSAGE_DEFAULT,
+            now().isoformat()
+        )
+    )
 
     db.commit()
 
     cursor.execute(
-        "SELECT * FROM guilds WHERE guild_id = ?",
-        (guild_id,)
+        """
+        SELECT *
+        FROM guilds
+        WHERE guild_id = ?
+        """,
+        (
+            guild_id,
+        )
     )
 
     return cursor.fetchone()
 
 
-def get_user(guild_id, user_id):
+def update_guild_setting(
+    guild_id,
+    setting,
+    value
+):
 
-    cursor.execute("""
-        SELECT * FROM users
+    allowed = {
+        "language",
+        "currency_name",
+        "currency_symbol",
+        "message_channel",
+        "notification_channel",
+        "daily_enabled",
+        "weekly_enabled",
+        "monthly_enabled",
+        "xp_enabled",
+        "reminders_enabled",
+        "level_up_enabled",
+        "level_up_mention",
+        "level_up_message"
+    }
+
+    if setting not in allowed:
+
+        raise ValueError(
+            "Invalid guild setting."
+        )
+
+    get_guild(
+        guild_id
+    )
+
+    cursor.execute(
+        f"""
+        UPDATE guilds
+        SET {setting} = ?
+        WHERE guild_id = ?
+        """,
+        (
+            value,
+            guild_id
+        )
+    )
+
+    db.commit()
+
+
+def get_user(
+    guild_id,
+    user_id
+):
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM users
+
         WHERE guild_id = ?
         AND user_id = ?
-    """, (
-        guild_id,
-        user_id
-    ))
+        """,
+        (
+            guild_id,
+            user_id
+        )
+    )
 
     row = cursor.fetchone()
 
     if row:
+
         return row
 
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO users (
             guild_id,
             user_id
         )
         VALUES (?, ?)
-    """, (
-        guild_id,
-        user_id
-    ))
+        """,
+        (
+            guild_id,
+            user_id
+        )
+    )
 
     db.commit()
 
-    cursor.execute("""
-        SELECT * FROM users
+    cursor.execute(
+        """
+        SELECT *
+        FROM users
+
         WHERE guild_id = ?
         AND user_id = ?
-    """, (
-        guild_id,
-        user_id
-    ))
+        """,
+        (
+            guild_id,
+            user_id
+        )
+    )
 
     return cursor.fetchone()
 
 
-def calculate_level(xp):
+# ============================================================
+# LEVEL SYSTEM
+# ============================================================
+
+def calculate_level(
+    xp
+):
 
     level = 1
     required = 100
 
-    while xp >= required:
+    remaining = xp
 
-        xp -= required
+    while remaining >= required:
+
+        remaining -= required
 
         level += 1
 
         required = int(
-            100 * (1.35 ** (level - 1))
+            100 * (
+                1.35 ** (
+                    level - 1
+                )
+            )
         )
 
     return level
 
 
-def level_required(level):
+def level_required(
+    level
+):
 
     if level <= 1:
+
         return 0
 
     total = 0
 
-    for current in range(1, level):
+    for current in range(
+        1,
+        level
+    ):
 
         total += int(
-            100 * (1.35 ** (current - 1))
+            100 * (
+                1.35 ** (
+                    current - 1
+                )
+            )
         )
 
     return total
 
 
-def add_xp(guild_id, user_id, amount):
+async def send_level_up_message(
+    guild,
+    member,
+    new_level
+):
+
+    settings = get_guild(
+        guild.id
+    )
+
+    if not settings[
+        "level_up_enabled"
+    ]:
+
+        return
+
+    channel = None
+
+    if settings[
+        "notification_channel"
+    ]:
+
+        channel = guild.get_channel(
+            settings[
+                "notification_channel"
+            ]
+        )
+
+    if channel is None:
+
+        channel = guild.system_channel
+
+    if channel is None:
+
+        return
+
+    mention = (
+        member.mention
+        if settings[
+            "level_up_mention"
+        ]
+        else member.display_name
+    )
+
+    message = settings[
+        "level_up_message"
+    ]
+
+    message = message.replace(
+        "{mention}",
+        mention
+    )
+
+    message = message.replace(
+        "{user}",
+        member.display_name
+    )
+
+    message = message.replace(
+        "{level}",
+        str(new_level)
+    )
+
+    try:
+
+        await channel.send(
+            message
+        )
+
+    except (
+        discord.Forbidden,
+        discord.HTTPException
+    ):
+
+        pass
+
+
+async def add_xp(
+    guild_id,
+    user_id,
+    amount
+):
 
     user = get_user(
         guild_id,
         user_id
     )
 
-    old_level = user["level"]
+    old_level = user[
+        "level"
+    ]
 
-    new_xp = user["xp"] + amount
+    new_xp = (
+        user["xp"] +
+        amount
+    )
 
     new_level = calculate_level(
         new_xp
     )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         UPDATE users
 
         SET xp = ?,
-            level = ?
+            level = ?,
+            last_xp = ?
 
         WHERE guild_id = ?
         AND user_id = ?
-    """, (
-        new_xp,
-        new_level,
-        guild_id,
-        user_id
-    ))
+        """,
+        (
+            new_xp,
+            new_level,
+            now().isoformat(),
+            guild_id,
+            user_id
+        )
+    )
 
     db.commit()
 
-    return old_level, new_level
+    if new_level > old_level:
+
+        guild = bot.get_guild(
+            guild_id
+        )
+
+        if guild:
+
+            member = guild.get_member(
+                user_id
+            )
+
+            if member:
+
+                await send_level_up_message(
+                    guild,
+                    member,
+                    new_level
+                )
+
+    return (
+        old_level,
+        new_level
+    )
 
 
-def add_coins(guild_id, user_id, amount):
+# ============================================================
+# COINS
+# ============================================================
+
+def add_coins(
+    guild_id,
+    user_id,
+    amount
+):
 
     get_user(
         guild_id,
         user_id
     )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         UPDATE users
 
         SET coins = coins + ?
 
         WHERE guild_id = ?
         AND user_id = ?
-    """, (
-        amount,
+        """,
+        (
+            amount,
+            guild_id,
+            user_id
+        )
+    )
+
+    db.commit()
+
+
+def remove_coins(
+    guild_id,
+    user_id,
+    amount
+):
+
+    get_user(
         guild_id,
         user_id
-    ))
+    )
+
+    cursor.execute(
+        """
+        UPDATE users
+
+        SET coins = MAX(
+            coins - ?,
+            0
+        )
+
+        WHERE guild_id = ?
+        AND user_id = ?
+        """,
+        (
+            amount,
+            guild_id,
+            user_id
+        )
+    )
+
+    db.commit()
+
+
+# ============================================================
+# TRANSLATIONS
+# ============================================================
+
+TRANSLATIONS = {
+
+    "ar": {
+
+        "tasks_title": "📋 مهمتك الحالية",
+
+        "tasks_description":
+            "أنجز المهمة الحالية لفتح المهمة التالية.",
+
+        "daily": "☀️ المهمة اليومية",
+
+        "weekly": "📅 المهمة الأسبوعية",
+
+        "monthly": "🌙 المهمة الشهرية",
+
+        "reward": "المكافأة",
+
+        "progress": "التقدم",
+
+        "start": "🚀 ابدأ المهمة",
+
+        "details": "📖 التفاصيل",
+
+        "refresh": "🔄 تحديث",
+
+        "completed": "✅ اكتملت",
+
+        "locked":
+            "🔒 أكمل المهمة الحالية أولاً لفتح هذه المهمة.",
+
+        "all_completed":
+            "🎉 أكملت جميع المهام المتاحة لهذه الفترة!",
+
+        "help_title":
+            "❓ مساعدة Forge Tasks BOT",
+
+        "help_description":
+            "استخدم الأوامر التالية للتعامل مع نظام المهام والـXP والكوينز.",
+
+        "info_title":
+            "ℹ️ معلومات Forge Tasks BOT",
+
+        "setup_title":
+            "⚙️ لوحة إعداد Forge Tasks BOT",
+
+        "setup_description":
+            "استخدم الأزرار والقوائم بالأسفل لتعديل إعدادات السيرفر.",
+
+        "balance":
+            "🪙 الرصيد",
+
+        "profile":
+            "👤 الملف الشخصي",
+
+        "top":
+            "🏆 الترتيب",
+
+        "language":
+            "🌐 اللغة",
+
+        "currency":
+            "🪙 العملة",
+
+        "channel":
+            "📍 قناة المهام",
+
+        "notifications":
+            "🔔 قناة الإشعارات",
+
+        "level_up":
+            "🎉 إعدادات Level Up",
+
+        "reminders":
+            "⏰ التذكيرات",
+
+        "enabled":
+            "مفعّل",
+
+        "disabled":
+            "متوقف",
+
+        "yes":
+            "نعم",
+
+        "no":
+            "لا",
+
+        "back":
+            "⬅️ رجوع",
+
+        "close":
+            "✖️ إغلاق",
+
+        "saved":
+            "✅ تم حفظ الإعدادات.",
+
+        "permission":
+            "❌ تحتاج صلاحية **Manage Server** لاستخدام هذا القسم.",
+
+        "message_channel":
+            "ابدأ من قناة الرسائل المحددة.",
+
+        "voice_channel":
+            "ادخل أي قناة صوتية وابقَ فيها للمدة المطلوبة.",
+
+        "invite":
+            "ابدأ بدعوة أعضاء جدد إلى السيرفر.",
+
+        "nickname":
+            "ابدأ بتغيير اسمك المستعار في السيرفر.",
+
+        "level":
+            "اكسب XP من التفاعل حتى تصل إلى المستوى المطلوب.",
+
+        "image":
+            "أرسل الصور في القناة المحددة للمهمة.",
+
+        "next":
+            "بعد إكمالها ستفتح المهمة التالية.",
+
+        "no_channel":
+            "لم يتم تحديد قناة بعد."
+    },
+
+    "en": {
+
+        "tasks_title": "📋 Your Current Task",
+
+        "tasks_description":
+            "Complete the current task to unlock the next one.",
+
+        "daily": "☀️ Daily Task",
+
+        "weekly": "📅 Weekly Task",
+
+        "monthly": "🌙 Monthly Task",
+
+        "reward": "Reward",
+
+        "progress": "Progress",
+
+        "start": "🚀 Start Task",
+
+        "details": "📖 Details",
+
+        "refresh": "🔄 Refresh",
+
+        "completed": "✅ Completed",
+
+        "locked":
+            "🔒 Complete the current task first to unlock this one.",
+
+        "all_completed":
+            "🎉 You completed all available tasks for this period!",
+
+        "help_title":
+            "❓ Forge Tasks BOT Help",
+
+        "help_description":
+            "Use the following commands to manage tasks, XP and coins.",
+
+        "info_title":
+            "ℹ️ Forge Tasks BOT Information",
+
+        "setup_title":
+            "⚙️ Forge Tasks BOT Setup",
+
+        "setup_description":
+            "Use the buttons and menus below to configure the server.",
+
+        "balance":
+            "🪙 Balance",
+
+        "profile":
+            "👤 Profile",
+
+        "top":
+            "🏆 Leaderboard",
+
+        "language":
+            "🌐 Language",
+
+        "currency":
+            "🪙 Currency",
+
+        "channel":
+            "📍 Task Channel",
+
+        "notifications":
+            "🔔 Notification Channel",
+
+        "level_up":
+            "🎉 Level Up Settings",
+
+        "reminders":
+            "⏰ Reminders",
+
+        "enabled":
+            "Enabled",
+
+        "disabled":
+            "Disabled",
+
+        "yes":
+            "Yes",
+
+        "no":
+            "No",
+
+        "back":
+            "⬅️ Back",
+
+        "close":
+            "✖️ Close",
+
+        "saved":
+            "✅ Settings saved.",
+
+        "permission":
+            "❌ You need **Manage Server** permission to use this section.",
+
+        "message_channel":
+            "Start in the configured message channel.",
+
+        "voice_channel":
+            "Join any voice channel and stay there for the required time.",
+
+        "invite":
+            "Start by inviting new members to the server.",
+
+        "nickname":
+            "Start by changing your server nickname.",
+
+        "level":
+            "Earn XP through activity until you reach the required level.",
+
+        "image":
+            "Send images in the configured task channel.",
+
+        "next":
+            "The next task will unlock after completion.",
+
+        "no_channel":
+            "No channel has been configured yet."
+    }
+}
+
+
+def get_language(
+    guild_id
+):
+
+    guild = get_guild(
+        guild_id
+    )
+
+    language = guild[
+        "language"
+    ]
+
+    if language not in TRANSLATIONS:
+
+        return "ar"
+
+    return language
+
+
+def t(
+    guild_id,
+    key
+):
+
+    language = get_language(
+        guild_id
+    )
+
+    return TRANSLATIONS[
+        language
+    ].get(
+        key,
+        key
+    )
+
+
+# ============================================================
+# TASK DEFINITIONS
+# ============================================================
+
+DAILY_TASKS = [
+
+    {
+        "id": "daily_messages",
+
+        "name": "إرسال 50 رسالة",
+
+        "name_en": "Send 50 Messages",
+
+        "description":
+            "أرسل 50 رسالة في الروم المحدد.",
+
+        "description_en":
+            "Send 50 messages in the configured channel.",
+
+        "target": 50,
+
+        "reward": 10,
+
+        "type": "messages",
+
+        "start": "message_channel"
+    },
+
+    {
+        "id": "daily_invites",
+
+        "name": "دعوة 3 أشخاص",
+
+        "name_en": "Invite 3 People",
+
+        "description":
+            "ادعُ 3 أشخاص إلى السيرفر.",
+
+        "description_en":
+            "Invite 3 people to the server.",
+
+        "target": 3,
+
+        "reward": 20,
+
+        "type": "invites",
+
+        "start": "invite"
+    },
+
+    {
+        "id": "daily_afk",
+
+        "name": "AFK لمدة 30 دقيقة",
+
+        "name_en": "AFK for 30 Minutes",
+
+        "description":
+            "ابقَ في أي روم صوتي لمدة 30 دقيقة.",
+
+        "description_en":
+            "Stay in any voice channel for 30 minutes.",
+
+        "target": 1800,
+
+        "reward": 30,
+
+        "type": "voice",
+
+        "start": "voice_channel"
+    },
+
+    {
+        "id": "daily_level5",
+
+        "name": "الوصول إلى Level 5",
+
+        "name_en": "Reach Level 5",
+
+        "description":
+            "وصل إلى المستوى الخامس.",
+
+        "description_en":
+            "Reach level 5.",
+
+        "target": 5,
+
+        "reward": 50,
+
+        "type": "level",
+
+        "start": "level"
+    },
+
+    {
+        "id": "daily_images",
+
+        "name": "إرسال 10 صور",
+
+        "name_en": "Send 10 Images",
+
+        "description":
+            "أرسل 10 صور.",
+
+        "description_en":
+            "Send 10 images.",
+
+        "target": 10,
+
+        "reward": 20,
+
+        "type": "images",
+
+        "start": "image"
+    }
+
+]
+
+
+WEEKLY_TASKS = [
+
+    {
+        "id": "weekly_afk",
+
+        "name": "AFK لمدة ساعة",
+
+        "name_en": "AFK for 1 Hour",
+
+        "description":
+            "ابقَ في روم صوتي لمدة ساعة.",
+
+        "description_en":
+            "Stay in a voice channel for one hour.",
+
+        "target": 3600,
+
+        "reward": 30,
+
+        "type": "voice",
+
+        "start": "voice_channel"
+    },
+
+    {
+        "id": "weekly_messages",
+
+        "name": "إرسال 200 رسالة",
+
+        "name_en": "Send 200 Messages",
+
+        "description":
+            "أرسل 200 رسالة في الروم المحدد.",
+
+        "description_en":
+            "Send 200 messages in the configured channel.",
+
+        "target": 200,
+
+        "reward": 50,
+
+        "type": "messages",
+
+        "start": "message_channel"
+    },
+
+    {
+        "id": "weekly_invites",
+
+        "name": "دعوة 10 أشخاص",
+
+        "name_en": "Invite 10 People",
+
+        "description":
+            "ادعُ 10 أشخاص للسيرفر.",
+
+        "description_en":
+            "Invite 10 people to the server.",
+
+        "target": 10,
+
+        "reward": 70,
+
+        "type": "invites",
+
+        "start": "invite"
+    },
+
+    {
+        "id": "weekly_images",
+
+        "name": "إرسال 30 صورة",
+
+        "name_en": "Send 30 Images",
+
+        "description":
+            "أرسل 30 صورة.",
+
+        "description_en":
+            "Send 30 images.",
+
+        "target": 30,
+
+        "reward": 50,
+
+        "type": "images",
+
+        "start": "image"
+    },
+
+    {
+        "id": "weekly_nickname",
+
+        "name": "تغيير الاسم المستعار",
+
+        "name_en": "Change Nickname",
+
+        "description":
+            "غيّر اسمك المستعار.",
+
+        "description_en":
+            "Change your server nickname.",
+
+        "target": 1,
+
+        "reward": 20,
+
+        "type": "nickname",
+
+        "start": "nickname"
+    }
+
+]
+
+
+MONTHLY_TASKS = []
+
+
+# ============================================================
+# TASK HELPERS
+# ============================================================
+
+def get_tasks_for_period(
+    period
+):
+
+    if period == "daily":
+
+        return DAILY_TASKS
+
+    if period == "weekly":
+
+        return WEEKLY_TASKS
+
+    if period == "monthly":
+
+        return MONTHLY_TASKS
+
+    return []
+
+
+def get_task(
+    task_id
+):
+
+    all_tasks = (
+        DAILY_TASKS +
+        WEEKLY_TASKS +
+        MONTHLY_TASKS
+    )
+
+    for task in all_tasks:
+
+        if task["id"] == task_id:
+
+            return task
+
+    return None
+
+
+def get_task_state(
+    guild_id,
+    user_id,
+    period
+):
+
+    period_key = current_period_key(
+        period
+    )
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM task_state
+
+        WHERE guild_id = ?
+        AND user_id = ?
+        AND period = ?
+        """,
+        (
+            guild_id,
+            user_id,
+            period
+        )
+    )
+
+    state = cursor.fetchone()
+
+    if state:
+
+        if state["period_key"] != period_key:
+
+            cursor.execute(
+                """
+                UPDATE task_state
+
+                SET current_index = 0,
+                    period_key = ?,
+                    updated_at = ?
+
+                WHERE guild_id = ?
+                AND user_id = ?
+                AND period = ?
+                """,
+                (
+                    period_key,
+                    now().isoformat(),
+                    guild_id,
+                    user_id,
+                    period
+                )
+            )
+
+            db.commit()
+
+            cursor.execute(
+                """
+                SELECT *
+                FROM task_state
+
+                WHERE guild_id = ?
+                AND user_id = ?
+                AND period = ?
+                """,
+                (
+                    guild_id,
+                    user_id,
+                    period
+                )
+            )
+
+            state = cursor.fetchone()
+
+        return state
+
+    cursor.execute(
+        """
+        INSERT INTO task_state (
+            guild_id,
+            user_id,
+            period,
+            current_index,
+            period_key,
+            updated_at
+        )
+        VALUES (?, ?, ?, 0, ?, ?)
+        """,
+        (
+            guild_id,
+            user_id,
+            period,
+            period_key,
+            now().isoformat()
+        )
+    )
+
+    db.commit()
+
+    cursor.execute(
+        """
+        SELECT *
+        FROM task_state
+
+        WHERE guild_id = ?
+        AND user_id = ?
+        AND period = ?
+        """,
+        (
+            guild_id,
+            user_id,
+            period
+        )
+    )
+
+    return cursor.fetchone()
+
+
+def get_current_task(
+    guild_id,
+    user_id,
+    period
+):
+
+    tasks_list = get_tasks_for_period(
+        period
+    )
+
+    if not tasks_list:
+
+        return None
+
+    state = get_task_state(
+        guild_id,
+        user_id,
+        period
+    )
+
+    index = state[
+        "current_index"
+    ]
+
+    if index >= len(tasks_list):
+
+        return None
+
+    return tasks_list[
+        index
+    ]
+
+
+def advance_task(
+    guild_id,
+    user_id,
+    period
+):
+
+    state = get_task_state(
+        guild_id,
+        user_id,
+        period
+    )
+
+    cursor.execute(
+        """
+        UPDATE task_state
+
+        SET current_index =
+            current_index + 1,
+
+            updated_at = ?
+
+        WHERE guild_id = ?
+        AND user_id = ?
+        AND period = ?
+        """,
+        (
+            now().isoformat(),
+            guild_id,
+            user_id,
+            period
+        )
+    )
+
+    db.commit()
+
+    return state[
+        "current_index"
+    ] + 1
+
+
+def get_task_progress(
+    guild_id,
+    user_id,
+    task_id,
+    period
+):
+
+    cursor.execute(
+        """
+        SELECT progress
+        FROM task_progress
+
+        WHERE guild_id = ?
+        AND user_id = ?
+        AND task_id = ?
+        AND period = ?
+        """,
+        (
+            guild_id,
+            user_id,
+            task_id,
+            period
+        )
+    )
+
+    row = cursor.fetchone()
+
+    if not row:
+
+        return 0
+
+    return row[
+        "progress"
+    ]
+
+
+def set_task_progress(
+    guild_id,
+    user_id,
+    task_id,
+    period,
+    progress
+):
+
+    cursor.execute(
+        """
+        INSERT INTO task_progress (
+            guild_id,
+            user_id,
+            task_id,
+            period,
+            progress,
+            updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?)
+
+        ON CONFLICT(
+            guild_id,
+            user_id,
+            task_id,
+            period
+        )
+
+        DO UPDATE SET
+            progress = excluded.progress,
+            updated_at = excluded.updated_at
+        """,
+        (
+            guild_id,
+            user_id,
+            task_id,
+            period,
+            progress,
+            now().isoformat()
+        )
+    )
 
     db.commit()
 
@@ -354,7 +1791,8 @@ def is_task_completed(
     period
 ):
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT 1
 
         FROM completed_tasks
@@ -363,17 +1801,22 @@ def is_task_completed(
         AND user_id = ?
         AND task_id = ?
         AND period = ?
-    """, (
-        guild_id,
-        user_id,
-        task_id,
-        period
-    ))
+        """,
+        (
+            guild_id,
+            user_id,
+            task_id,
+            period
+        )
+    )
 
-    return cursor.fetchone() is not None
+    return (
+        cursor.fetchone()
+        is not None
+    )
 
 
-def complete_task(
+async def complete_task(
     guild_id,
     user_id,
     task_id,
@@ -387,9 +1830,27 @@ def complete_task(
         task_id,
         period
     ):
+
         return False
 
-    cursor.execute("""
+    current_task = get_current_task(
+        guild_id,
+        user_id,
+        period
+    )
+
+    if not current_task:
+
+        return False
+
+    if current_task[
+        "id"
+    ] != task_id:
+
+        return False
+
+    cursor.execute(
+        """
         INSERT INTO completed_tasks (
             guild_id,
             user_id,
@@ -398,13 +1859,15 @@ def complete_task(
             completed_at
         )
         VALUES (?, ?, ?, ?, ?)
-    """, (
-        guild_id,
-        user_id,
-        task_id,
-        period,
-        now().isoformat()
-    ))
+        """,
+        (
+            guild_id,
+            user_id,
+            task_id,
+            period,
+            now().isoformat()
+        )
+    )
 
     db.commit()
 
@@ -414,851 +1877,120 @@ def complete_task(
         reward
     )
 
+    advance_task(
+        guild_id,
+        user_id,
+        period
+    )
+
     return True
 
 
 # ============================================================
-# EMBEDS
+# TASK PROGRESS
 # ============================================================
 
-def base_embed(
-    title,
-    description="",
-    color=discord.Color.blurple()
+def get_user_stat_for_task(
+    user,
+    task
 ):
 
-    embed = discord.Embed(
-        title=title,
-        description=description,
-        color=color,
-        timestamp=now()
-    )
+    task_type = task[
+        "type"
+    ]
 
-    embed.set_footer(
-        text="Task Bot"
-    )
+    if task_type == "messages":
 
-    return embed
+        return user[
+            "messages"
+        ]
 
+    if task_type == "images":
 
-# ============================================================
-# TASKS
-# ============================================================
+        return user[
+            "images"
+        ]
 
-DAILY_TASKS = [
+    if task_type == "invites":
 
-    {
-        "id": "daily_messages",
-        "name": "إرسال 50 رسالة",
-        "description": "أرسل 50 رسالة في الروم المحدد.",
-        "target": 50,
-        "reward": 10
-    },
+        return user[
+            "invites"
+        ]
 
-    {
-        "id": "daily_invites",
-        "name": "دعوة 3 أشخاص",
-        "description": "ادعُ 3 أشخاص إلى السيرفر.",
-        "target": 3,
-        "reward": 20
-    },
+    if task_type == "voice":
 
-    {
-        "id": "daily_afk",
-        "name": "AFK لمدة 30 دقيقة",
-        "description": "ابقَ في أي روم صوتي لمدة 30 دقيقة.",
-        "target": 1800,
-        "reward": 30
-    },
+        return user[
+            "voice_seconds"
+        ]
 
-    {
-        "id": "daily_level5",
-        "name": "الوصول إلى Level 5",
-        "description": "وصل إلى المستوى الخامس.",
-        "target": 5,
-        "reward": 50
-    },
+    if task_type == "level":
 
-    {
-        "id": "daily_images",
-        "name": "إرسال 10 صور",
-        "description": "أرسل 10 صور.",
-        "target": 10,
-        "reward": 20
-    }
+        return user[
+            "level"
+        ]
 
-]
+    if task_type == "nickname":
 
-
-WEEKLY_TASKS = [
-
-    {
-        "id": "weekly_afk",
-        "name": "AFK لمدة ساعة",
-        "description": "ابقَ في روم صوتي لمدة ساعة.",
-        "target": 3600,
-        "reward": 30
-    },
-
-    {
-        "id": "weekly_messages",
-        "name": "إرسال 200 رسالة",
-        "description": "أرسل 200 رسالة في الروم المحدد.",
-        "target": 200,
-        "reward": 50
-    },
-
-    {
-        "id": "weekly_invites",
-        "name": "دعوة 10 أشخاص",
-        "description": "ادعُ 10 أشخاص للسيرفر.",
-        "target": 10,
-        "reward": 70
-    },
-
-    {
-        "id": "weekly_images",
-        "name": "إرسال 30 صورة",
-        "description": "أرسل 30 صورة.",
-        "target": 30,
-        "reward": 50
-    },
-
-    {
-        "id": "weekly_nickname",
-        "name": "تغيير الاسم المستعار",
-        "description": "غيّر اسمك المستعار.",
-        "target": 1,
-        "reward": 20
-    }
-
-]
-
-
-MONTHLY_TASKS = []
-
-
-# ============================================================
-# /TASKS
-# ============================================================
-
-@bot.tree.command(
-    name="tasks",
-    description="عرض المهام اليومية والأسبوعية والشهرية"
-)
-async def tasks_command(
-    interaction: discord.Interaction
-):
-
-    guild = get_guild(
-        interaction.guild.id
-    )
-
-    user = get_user(
-        interaction.guild.id,
-        interaction.user.id
-    )
-
-    embed = base_embed(
-        "📋 مهامك",
-        "أنجز المهام واحصل على الكوينز 🪙"
-    )
-
-    # DAILY
-
-    daily_text = ""
-
-    for task in DAILY_TASKS:
-
-        completed = is_task_completed(
-            interaction.guild.id,
-            interaction.user.id,
-            task["id"],
-            "daily"
-        )
-
-        status = "✅" if completed else "⬜"
-
-        daily_text += (
-            f"{status} **{task['name']}**\n"
-            f"└ {task['description']}\n"
-            f"└ 🪙 {task['reward']} {guild['currency_name']}\n\n"
-        )
-
-    embed.add_field(
-        name="☀️ المهام اليومية",
-        value=daily_text or "لا توجد مهام.",
-        inline=False
-    )
-
-    # WEEKLY
-
-    weekly_text = ""
-
-    for task in WEEKLY_TASKS:
-
-        completed = is_task_completed(
-            interaction.guild.id,
-            interaction.user.id,
+        return get_task_progress(
+            user["guild_id"],
+            user["user_id"],
             task["id"],
             "weekly"
         )
 
-        status = "✅" if completed else "⬜"
-
-        weekly_text += (
-            f"{status} **{task['name']}**\n"
-            f"└ {task['description']}\n"
-            f"└ 🪙 {task['reward']} {guild['currency_name']}\n\n"
-        )
-
-    embed.add_field(
-        name="📅 المهام الأسبوعية",
-        value=weekly_text or "لا توجد مهام.",
-        inline=False
-    )
-
-    # MONTHLY
-
-    monthly_text = ""
-
-    for task in MONTHLY_TASKS:
-
-        completed = is_task_completed(
-            interaction.guild.id,
-            interaction.user.id,
-            task["id"],
-            "monthly"
-        )
-
-        status = "✅" if completed else "⬜"
-
-        monthly_text += (
-            f"{status} **{task['name']}**\n"
-            f"└ {task['description']}\n"
-            f"└ 🪙 {task['reward']} {guild['currency_name']}\n\n"
-        )
-
-    embed.add_field(
-        name="🌙 المهام الشهرية",
-        value=monthly_text or "سيتم إضافة المهام الشهرية قريباً.",
-        inline=False
-    )
-
-    await interaction.response.send_message(
-        embed=embed
-    )
+    return 0
 
 
-# ============================================================
-# /PROFILE
-# ============================================================
-
-@bot.tree.command(
-    name="profile",
-    description="عرض مستواك والكوينز والتقدم"
-)
-async def profile_command(
-    interaction: discord.Interaction
+def task_progress_percentage(
+    progress,
+    target
 ):
 
-    user = get_user(
-        interaction.guild.id,
-        interaction.user.id
-    )
+    if target <= 0:
 
-    guild = get_guild(
-        interaction.guild.id
-    )
+        return 100
 
-    current_level_xp = level_required(
-        user["level"]
-    )
-
-    next_level_xp = level_required(
-        user["level"] + 1
-    )
-
-    progress = user["xp"] - current_level_xp
-
-    required = (
-        next_level_xp -
-        current_level_xp
-    )
-
-    percentage = min(
+    return min(
         100,
-        int((progress / required) * 100)
+        int(
+            (
+                progress /
+                target
+            ) * 100
+        )
+    )
+
+
+def make_progress_bar(
+    progress,
+    target,
+    size=10
+):
+
+    percentage = task_progress_percentage(
+        progress,
+        target
     )
 
     filled = int(
-        percentage / 10
-    )
-
-    progress_bar = (
-        "🟦" * filled +
-        "⬜" * (10 - filled)
-    )
-
-    embed = base_embed(
-        f"👤 {interaction.user.display_name}",
-        "إحصائيات حسابك"
-    )
-
-    embed.set_thumbnail(
-        url=interaction.user.display_avatar.url
-    )
-
-    embed.add_field(
-        name="🪙 الرصيد",
-        value=(
-            f"**{user['coins']}** "
-            f"{guild['currency_symbol']}"
-        ),
-        inline=True
-    )
-
-    embed.add_field(
-        name="⭐ المستوى",
-        value=f"**Level {user['level']}**",
-        inline=True
-    )
-
-    embed.add_field(
-        name="✨ XP",
-        value=(
-            f"**{progress} / {required}**"
-        ),
-        inline=True
-    )
-
-    embed.add_field(
-        name="📊 التقدم",
-        value=(
-            f"{progress_bar}\n"
-            f"**{percentage}%**"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="💬 الرسائل",
-        value=str(user["messages"]),
-        inline=True
-    )
-
-    embed.add_field(
-        name="🖼️ الصور",
-        value=str(user["images"]),
-        inline=True
-    )
-
-    embed.add_field(
-        name="📨 الدعوات",
-        value=str(user["invites"]),
-        inline=True
-    )
-
-    await interaction.response.send_message(
-        embed=embed
-    )
-
-
-# ============================================================
-# /BALANCE
-# ============================================================
-
-@bot.tree.command(
-    name="balance",
-    description="عرض رصيدك"
-)
-async def balance_command(
-    interaction: discord.Interaction
-):
-
-    user = get_user(
-        interaction.guild.id,
-        interaction.user.id
-    )
-
-    guild = get_guild(
-        interaction.guild.id
-    )
-
-    embed = base_embed(
-        "🪙 رصيدك",
+        percentage /
         (
-            f"لديك **{user['coins']} "
-            f"{guild['currency_symbol']}**"
-        ),
-        discord.Color.gold()
-    )
-
-    await interaction.response.send_message(
-        embed=embed
-    )
-
-
-# ============================================================
-# /TOP
-# ============================================================
-
-@bot.tree.command(
-    name="top",
-    description="عرض أفضل 10 أعضاء"
-)
-async def top_command(
-    interaction: discord.Interaction
-):
-
-    cursor.execute("""
-        SELECT *
-        FROM users
-        WHERE guild_id = ?
-        ORDER BY coins DESC
-        LIMIT 10
-    """, (
-        interaction.guild.id,
-    ))
-
-    users = cursor.fetchall()
-
-    guild = get_guild(
-        interaction.guild.id
-    )
-
-    description = ""
-
-    medals = [
-        "🥇",
-        "🥈",
-        "🥉"
-    ]
-
-    for index, user in enumerate(users):
-
-        member = interaction.guild.get_member(
-            user["user_id"]
+            100 / size
         )
+    )
 
-        if not member:
-            name = f"<@{user['user_id']}>"
-        else:
-            name = member.display_name
-
-        if index < 3:
-            rank = medals[index]
-        else:
-            rank = f"**#{index + 1}**"
-
-        description += (
-            f"{rank} {name} — "
-            f"**{user['coins']} "
-            f"{guild['currency_symbol']}**\n"
+    filled = max(
+        0,
+        min(
+            size,
+            filled
         )
-
-    if not description:
-
-        description = "لا يوجد أعضاء في التوب حالياً."
-
-    embed = base_embed(
-        "🏆 Top 10",
-        description,
-        discord.Color.gold()
     )
 
-    await interaction.response.send_message(
-        embed=embed
-    )
-
-
-# ============================================================
-# MESSAGE XP + TASK TRACKING
-# ============================================================
-
-@bot.event
-async def on_message(
-    message: discord.Message
-):
-
-    if message.author.bot:
-        return
-
-    if not message.guild:
-        return
-
-    guild_id = message.guild.id
-    user_id = message.author.id
-
-    user = get_user(
-        guild_id,
-        user_id
-    )
-
-    # ----------------------------------------
-    # MESSAGE COUNT
-    # ----------------------------------------
-
-    cursor.execute("""
-        UPDATE users
-
-        SET messages = messages + 1,
-            last_message = ?
-
-        WHERE guild_id = ?
-        AND user_id = ?
-    """, (
-        now().isoformat(),
-        guild_id,
-        user_id
-    ))
-
-    db.commit()
-
-    # ----------------------------------------
-    # XP
-    # ----------------------------------------
-
-    guild_settings = get_guild(
-        guild_id
-    )
-
-    if guild_settings["xp_enabled"]:
-
-        add_xp(
-            guild_id,
-            user_id,
-            10
+    return (
+        "🟦" * filled +
+        "⬜" * (
+            size - filled
         )
-
-    # ----------------------------------------
-    # IMAGE
-    # ----------------------------------------
-
-    has_image = False
-
-    for attachment in message.attachments:
-
-        content_type = (
-            attachment.content_type or ""
-        )
-
-        if content_type.startswith(
-            "image/"
-        ):
-
-            has_image = True
-            break
-
-    if has_image:
-
-        cursor.execute("""
-            UPDATE users
-
-            SET images = images + 1
-
-            WHERE guild_id = ?
-            AND user_id = ?
-        """, (
-            guild_id,
-            user_id
-        ))
-
-        db.commit()
-
-    # ----------------------------------------
-    # DAILY MESSAGE TASK
-    # ----------------------------------------
-
-    user = get_user(
-        guild_id,
-        user_id
     )
 
-    if user["messages"] >= 50:
-
-        complete_task(
-            guild_id,
-            user_id,
-            "daily_messages",
-            "daily",
-            10
-        )
-
-    # ----------------------------------------
-    # DAILY IMAGE TASK
-    # ----------------------------------------
-
-    if user["images"] >= 10:
-
-        complete_task(
-            guild_id,
-            user_id,
-            "daily_images",
-            "daily",
-            20
-        )
-
-    # ----------------------------------------
-    # WEEKLY MESSAGE TASK
-    # ----------------------------------------
-
-    if user["messages"] >= 200:
-
-        complete_task(
-            guild_id,
-            user_id,
-            "weekly_messages",
-            "weekly",
-            50
-        )
-
-    # ----------------------------------------
-    # WEEKLY IMAGE TASK
-    # ----------------------------------------
-
-    if user["images"] >= 30:
-
-        complete_task(
-            guild_id,
-            user_id,
-            "weekly_images",
-            "weekly",
-            50
-        )
-
-    await bot.process_commands(
-        message
-    )
-
-
-# ============================================================
-# VOICE / AFK TRACKER
-# ============================================================
-
-@tasks.loop(seconds=60)
-async def voice_tracker():
-
-    for guild in bot.guilds:
-
-        for member in guild.members:
-
-            if member.bot:
-                continue
-
-            if not member.voice:
-                continue
-
-            if not member.voice.channel:
-                continue
-
-            user = get_user(
-                guild.id,
-                member.id
-            )
-
-            cursor.execute("""
-                UPDATE users
-
-                SET voice_seconds =
-                    voice_seconds + 60
-
-                WHERE guild_id = ?
-                AND user_id = ?
-            """, (
-                guild.id,
-                member.id
-            ))
-
-            db.commit()
-
-            # -----------------------------
-            # DAILY AFK
-            # -----------------------------
-
-            if user["voice_seconds"] + 60 >= 1800:
-
-                complete_task(
-                    guild.id,
-                    member.id,
-                    "daily_afk",
-                    "daily",
-                    30
-                )
-
-            # -----------------------------
-            # WEEKLY AFK
-            # -----------------------------
-
-            if user["voice_seconds"] + 60 >= 3600:
-
-                complete_task(
-                    guild.id,
-                    member.id,
-                    "weekly_afk",
-                    "weekly",
-                    30
-                )
-
-            # -----------------------------
-            # VOICE XP
-            # -----------------------------
-
-            guild_settings = get_guild(
-                guild.id
-            )
-
-            if guild_settings["xp_enabled"]:
-
-                add_xp(
-                    guild.id,
-                    member.id,
-                    5
-                )
-
-
-# ============================================================
-# /SETUP
-# ============================================================
-
-@bot.tree.command(
-    name="setup",
-    description="إعداد نظام المهام والبوت"
-)
-@app_commands.describe(
-    language="لغة البوت",
-    currency="اسم العملة",
-    symbol="رمز العملة"
-)
-@app_commands.choices(
-    language=[
-        app_commands.Choice(
-            name="العربية",
-            value="ar"
-        ),
-        app_commands.Choice(
-            name="English",
-            value="en"
-        )
-    ]
-)
-async def setup_command(
-    interaction: discord.Interaction,
-    language: app_commands.Choice[str] | None = None,
-    currency: str | None = None,
-    symbol: str | None = None
-):
-
-    if not interaction.user.guild_permissions.manage_guild:
-
-        await interaction.response.send_message(
-            "❌ تحتاج صلاحية **Manage Server** لاستخدام هذا الأمر.",
-            ephemeral=True
-        )
-
-        return
-
-    get_guild(
-        interaction.guild.id
-    )
-
-    if language:
-
-        cursor.execute("""
-            UPDATE guilds
-
-            SET language = ?
-
-            WHERE guild_id = ?
-        """, (
-            language.value,
-            interaction.guild.id
-        ))
-
-    if currency:
-
-        cursor.execute("""
-            UPDATE guilds
-
-            SET currency_name = ?
-
-            WHERE guild_id = ?
-        """, (
-            currency,
-            interaction.guild.id
-        ))
-
-    if symbol:
-
-        cursor.execute("""
-            UPDATE guilds
-
-            SET currency_symbol = ?
-
-            WHERE guild_id = ?
-        """, (
-            symbol,
-            interaction.guild.id
-        ))
-
-    db.commit()
-
-    guild = get_guild(
-        interaction.guild.id
-    )
-
-    embed = base_embed(
-        "⚙️ إعدادات البوت",
-        "تم تحديث إعدادات السيرفر بنجاح.",
-        discord.Color.green()
-    )
-
-    embed.add_field(
-        name="🌐 اللغة",
-        value=guild["language"],
-        inline=True
-    )
-
-    embed.add_field(
-        name="🪙 العملة",
-        value=(
-            f"{guild['currency_symbol']} "
-            f"{guild['currency_name']}"
-        ),
-        inline=True
-    )
-
-    embed.add_field(
-        name="📋 المهام",
-        value=(
-            "☀️ يومية\n"
-            "📅 أسبوعية\n"
-            "🌙 شهرية"
-        ),
-        inline=True
-    )
-
-    await interaction.response.send_message(
-        embed=embed
-    )
-
-
-# ============================================================
-# BOT READY
-# ============================================================
-
-@bot.event
-async def on_ready():
-
-    print(
-        f"Logged in as "
-        f"{bot.user} "
-        f"(ID: {bot.user.id})"
-    )
-
-
-# ============================================================
-# RUN
-# ============================================================
-
-bot.run(TOKEN)
