@@ -27,6 +27,11 @@ load_dotenv()
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+# When set, slash commands are synchronized to this server immediately.  A
+# global synchronization is used otherwise and Discord can take up to an hour
+# to make the commands visible.
+GUILD_ID = os.getenv("DISCORD_GUILD_ID")
+
 if not TOKEN:
     raise RuntimeError(
         "DISCORD_TOKEN غير موجود في Environment Variables"
@@ -649,7 +654,17 @@ class TaskBot(commands.Bot):
 
     async def setup_hook(self):
 
-        await self.tree.sync()
+        if GUILD_ID:
+
+            guild = discord.Object(id=int(GUILD_ID))
+
+            self.tree.copy_global_to(guild=guild)
+
+            synced_commands = await self.tree.sync(guild=guild)
+
+        else:
+
+            synced_commands = await self.tree.sync()
 
         if not voice_tracker.is_running():
 
@@ -672,7 +687,8 @@ class TaskBot(commands.Bot):
         )
 
         print(
-            "Slash commands synchronized."
+            f"Synchronized {len(synced_commands)} slash commands "
+            f"({'guild' if GUILD_ID else 'global'} scope)."
         )
 
         print(
@@ -685,6 +701,15 @@ class TaskBot(commands.Bot):
 
 
 bot = TaskBot()
+
+
+# Register application commands before setup_hook() synchronizes the command
+# tree with Discord.  Previously this entry point only synced an empty tree,
+# because the command definitions in commands.py were never loaded.
+from commands import register_commands, setup_error_handler
+
+register_commands(bot)
+bot.tree.on_error = setup_error_handler
 
 
 # ============================================================

@@ -2230,6 +2230,77 @@ def reset_active_task(
     connection.commit()
 
 
+# Backwards-compatible task-state helpers used by tasks.py.  The database
+# schema stores the active position as `task_index`; the task module used the
+# older `current_index` name.
+def get_task_state(
+    guild_id,
+    user_id,
+    period
+):
+
+    index = get_active_task_index(
+        guild_id,
+        user_id,
+        period
+    )
+
+    return {
+        "current_index": index,
+        "task_index": index,
+    }
+
+
+def set_task_index(
+    guild_id,
+    user_id,
+    period,
+    task_index
+):
+
+    set_active_task_index(
+        guild_id,
+        user_id,
+        period,
+        task_index
+    )
+
+
+def advance_task_index(
+    guild_id,
+    user_id,
+    period
+):
+
+    next_index = get_active_task_index(
+        guild_id,
+        user_id,
+        period
+    ) + 1
+
+    set_active_task_index(
+        guild_id,
+        user_id,
+        period,
+        next_index
+    )
+
+    return next_index
+
+
+def get_period_stats(
+    guild_id,
+    user_id,
+    period
+):
+    """Return the tracked user stats consumed by the task progress helpers."""
+
+    return get_user(
+        guild_id,
+        user_id
+    )
+
+
 # ============================================================
 # COMPLETED TASKS
 # ============================================================

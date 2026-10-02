@@ -1445,11 +1445,6 @@ def register_commands(
         callback=manager.exchange
     )
 
-    exchange_command.describe(
-        currency_id="رقم العملة",
-        amount="الكمية المطلوب تحويلها"
-    )
-
     bot.tree.add_command(
         exchange_command
     )
