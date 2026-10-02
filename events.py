@@ -40,9 +40,7 @@ from embeds import (
 # ============================================================
 
 voice_sessions = {}
-
 invite_cache = {}
-
 last_message_xp = {}
 
 
@@ -104,7 +102,7 @@ class EventManager:
                 ] = {
 
                     invite.code:
-                    invite.uses
+                    invite.uses or 0
 
                     for invite in invites
 
@@ -127,23 +125,13 @@ class EventManager:
     ):
 
         if message.author.bot:
-
             return
-
 
         if not message.guild:
-
             return
 
-
-        guild_id = (
-            message.guild.id
-        )
-
-        user_id = (
-            message.author.id
-        )
-
+        guild_id = message.guild.id
+        user_id = message.author.id
 
         # ----------------------------------------------------
         # CREATE USER
@@ -154,7 +142,6 @@ class EventManager:
             user_id
         )
 
-
         # ----------------------------------------------------
         # MESSAGE COUNT
         # ----------------------------------------------------
@@ -164,7 +151,6 @@ class EventManager:
             user_id
         )
 
-
         # ----------------------------------------------------
         # XP
         # ----------------------------------------------------
@@ -173,14 +159,11 @@ class EventManager:
             message
         )
 
-
         # ----------------------------------------------------
         # IMAGE
         # ----------------------------------------------------
 
-        if self.has_image(
-            message
-        ):
+        if self.has_image(message):
 
             add_image(
                 guild_id,
@@ -188,11 +171,8 @@ class EventManager:
             )
 
             results = process_image_tasks(
-
                 guild_id,
-
                 user_id
-
             )
 
             await self.send_completed_tasks(
@@ -201,59 +181,35 @@ class EventManager:
                 results
             )
 
-
         # ----------------------------------------------------
-        # MESSAGE TASKS
+        # MESSAGE TASK
         # ----------------------------------------------------
 
-        channel_id = (
+        results = process_message_tasks(
+            guild_id,
+            user_id,
             message.channel.id
         )
 
-
-        results = process_message_tasks(
-
-            guild_id,
-
-            user_id,
-
-            channel_id
-
-        )
-
-
         await self.send_completed_tasks(
-
             message.channel,
-
             message.author,
-
             results
-
         )
-
 
         # ----------------------------------------------------
         # LEVEL TASK
         # ----------------------------------------------------
 
         result = process_level_tasks(
-
             guild_id,
-
             user_id
-
         )
 
-
         await self.send_completed_tasks(
-
             message.channel,
-
             message.author,
-
             [result]
-
         )
 
 
@@ -266,85 +222,56 @@ class EventManager:
         message
     ):
 
-        guild_id = (
-            message.guild.id
-        )
-
-        user_id = (
-            message.author.id
-        )
-
+        guild_id = message.guild.id
+        user_id = message.author.id
 
         guild = get_guild(
             guild_id
         )
 
-
         if not guild:
-
             return
-
 
         if not guild["xp_enabled"]:
-
             return
 
-
         current_time = time.time()
-
 
         key = (
             guild_id,
             user_id
         )
 
-
-        last_time = (
-            last_message_xp.get(
-                key,
-                0
-            )
+        last_time = last_message_xp.get(
+            key,
+            0
         )
 
-
         if (
-            current_time -
-            last_time
+            current_time - last_time
             <
             MESSAGE_XP_COOLDOWN
         ):
 
             return
 
-
         last_message_xp[
             key
         ] = current_time
 
-
         old_level, new_level = add_xp(
-
             guild_id,
-
             user_id,
-
             MESSAGE_XP
-
         )
-
 
         if new_level > old_level:
 
             await self.send_level_up(
-
                 message.channel,
-
                 message.author,
-
                 old_level,
-
                 new_level
-
             )
 
 
@@ -357,15 +284,12 @@ class EventManager:
         message
     ):
 
-        for attachment in (
-            message.attachments
-        ):
+        for attachment in message.attachments:
 
             content_type = (
                 attachment.content_type
                 or ""
             )
-
 
             if content_type.startswith(
                 "image/"
@@ -373,31 +297,24 @@ class EventManager:
 
                 return True
 
-
             filename = (
-                attachment.filename
-                .lower()
+                attachment.filename.lower()
             )
 
-
             image_extensions = (
-
                 ".png",
                 ".jpg",
                 ".jpeg",
                 ".gif",
                 ".webp",
                 ".bmp",
-
             )
-
 
             if filename.endswith(
                 image_extensions
             ):
 
                 return True
-
 
         return False
 
@@ -414,32 +331,54 @@ class EventManager:
     ):
 
         if member.bot:
-
             return
 
-
-        guild_id = (
-            member.guild.id
-        )
-
-        user_id = (
-            member.id
-        )
-
-
         # ----------------------------------------------------
-        # JOIN / LEAVE / MOVE
+        # JOIN
         # ----------------------------------------------------
 
-        if after.channel:
+        if after.channel and not before.channel:
 
             await self.voice_joined(
                 member,
                 after
             )
 
+            return
 
-        elif before.channel:
+        # ----------------------------------------------------
+        # MOVE
+        # ----------------------------------------------------
+
+        if after.channel and before.channel:
+
+            key = (
+                member.guild.id,
+                member.id
+            )
+
+            if key not in voice_sessions:
+
+                await self.voice_joined(
+                    member,
+                    after
+                )
+
+            else:
+
+                voice_sessions[
+                    key
+                ]["channel_id"] = (
+                    after.channel.id
+                )
+
+            return
+
+        # ----------------------------------------------------
+        # LEAVE
+        # ----------------------------------------------------
+
+        if before.channel and not after.channel:
 
             await self.voice_left(
                 member
@@ -456,14 +395,8 @@ class EventManager:
         state
     ):
 
-        guild_id = (
-            member.guild.id
-        )
-
-        user_id = (
-            member.id
-        )
-
+        guild_id = member.guild.id
+        user_id = member.id
 
         voice_sessions[
             (
@@ -474,10 +407,14 @@ class EventManager:
 
             "started": time.time(),
 
+            "last_update": time.time(),
+
             "channel_id":
                 state.channel.id,
 
-            "afk": False,
+            "afk": bool(
+                state.afk
+            ),
 
         }
 
@@ -491,156 +428,103 @@ class EventManager:
         member
     ):
 
-        guild_id = (
-            member.guild.id
-        )
-
-        user_id = (
-            member.id
-        )
-
+        guild_id = member.guild.id
+        user_id = member.id
 
         key = (
             guild_id,
             user_id
         )
 
-
         session = voice_sessions.pop(
             key,
             None
         )
 
-
         if not session:
-
             return
 
-
         elapsed = int(
-
             time.time()
             -
             session["started"]
-
         )
-
 
         if elapsed <= 0:
-
             return
 
+        # ----------------------------------------------------
+        # VOICE TIME
+        # ----------------------------------------------------
 
         add_voice_time(
-
             guild_id,
-
             user_id,
-
             elapsed
-
         )
 
-
         # ----------------------------------------------------
-        # AFK TIME
+        # ACTUAL DISCORD AFK TIME
+        #
+        # This is kept for statistics.
+        # It does NOT grant XP.
         # ----------------------------------------------------
 
         if session["afk"]:
 
             add_afk_time(
-
                 guild_id,
-
                 user_id,
-
                 elapsed
-
             )
 
-
         # ----------------------------------------------------
-        # XP
+        # VOICE XP
         # ----------------------------------------------------
 
         guild = get_guild(
             guild_id
         )
 
-
         if guild and guild["xp_enabled"]:
 
-            minutes = (
-                elapsed // 60
-            )
-
+            minutes = elapsed // 60
 
             xp_amount = (
                 minutes *
                 VOICE_XP
             )
 
-
             if xp_amount > 0:
 
                 old_level, new_level = add_xp(
-
                     guild_id,
-
                     user_id,
-
                     xp_amount
-
                 )
-
 
                 if new_level > old_level:
 
-                    try:
-
-                        await self.send_level_up(
-
-                            member.guild.system_channel,
-
-                            member,
-
-                            old_level,
-
-                            new_level
-
-                        )
-
-                    except Exception:
-
-                        pass
-
+                    await self.send_level_up(
+                        member.guild.system_channel,
+                        member,
+                        old_level,
+                        new_level
+                    )
 
         # ----------------------------------------------------
-        # TASKS
+        # VOICE TASK
         # ----------------------------------------------------
 
         results = process_voice_tasks(
-
             guild_id,
-
             user_id
-
         )
-
-
-        channel = (
-            member.guild.system_channel
-        )
-
 
         await self.send_completed_tasks(
-
-            channel,
-
+            member.guild.system_channel,
             member,
-
             results
-
         )
 
 
@@ -654,11 +538,9 @@ class EventManager:
 
         await self.bot.wait_until_ready()
 
-
         while not self.bot.is_closed():
 
             current_time = time.time()
-
 
             for key, session in list(
                 voice_sessions.items()
@@ -666,36 +548,25 @@ class EventManager:
 
                 guild_id, user_id = key
 
-
                 guild = self.bot.get_guild(
                     guild_id
                 )
 
-
                 if not guild:
-
                     continue
-
 
                 member = guild.get_member(
                     user_id
                 )
 
-
                 if not member:
-
                     continue
-
 
                 if not member.voice:
-
                     continue
-
 
                 if not member.voice.channel:
-
                     continue
-
 
                 # ------------------------------------------------
                 # UPDATE EVERY 60 SECONDS
@@ -706,42 +577,31 @@ class EventManager:
                     session["started"]
                 )
 
-
                 elapsed = int(
-
                     current_time -
                     last_update
-
                 )
-
 
                 if elapsed < 60:
-
                     continue
 
-
-                session["last_update"] = (
-                    current_time
-                )
-
+                session["last_update"] = current_time
 
                 # ------------------------------------------------
                 # VOICE TIME
                 # ------------------------------------------------
 
                 add_voice_time(
-
                     guild_id,
-
                     user_id,
-
                     60
-
                 )
 
-
                 # ------------------------------------------------
-                # AFK
+                # DISCORD AFK STATISTICS
+                #
+                # Kept for tracking only.
+                # No XP is awarded because of AFK state.
                 # ------------------------------------------------
 
                 if member.voice.afk:
@@ -749,43 +609,30 @@ class EventManager:
                     session["afk"] = True
 
                     add_afk_time(
-
                         guild_id,
-
                         user_id,
-
                         60
-
                     )
 
-
                 # ------------------------------------------------
-                # XP
+                # VOICE XP
                 # ------------------------------------------------
 
                 guild_settings = get_guild(
                     guild_id
                 )
 
-
                 if (
                     guild_settings
                     and
-                    guild_settings[
-                        "xp_enabled"
-                    ]
+                    guild_settings["xp_enabled"]
                 ):
 
                     old_level, new_level = add_xp(
-
                         guild_id,
-
                         user_id,
-
                         VOICE_XP
-
                     )
-
 
                     if new_level > old_level:
 
@@ -793,50 +640,33 @@ class EventManager:
                             guild.system_channel
                         )
 
-
                         if channel:
 
                             await self.send_level_up(
-
                                 channel,
-
                                 member,
-
                                 old_level,
-
                                 new_level
-
                             )
 
-
                 # ------------------------------------------------
-                # TASKS
+                # VOICE TASK
                 # ------------------------------------------------
 
                 results = process_voice_tasks(
-
                     guild_id,
-
                     user_id
-
                 )
-
 
                 channel = (
                     guild.system_channel
                 )
 
-
                 await self.send_completed_tasks(
-
                     channel,
-
                     member,
-
                     results
-
                 )
-
 
             await asyncio.sleep(
                 10
@@ -852,17 +682,13 @@ class EventManager:
         invite
     ):
 
-        guild_id = (
-            invite.guild.id
-        )
-
+        guild_id = invite.guild.id
 
         if guild_id not in invite_cache:
 
             invite_cache[
                 guild_id
             ] = {}
-
 
         invite_cache[
             guild_id
@@ -881,12 +707,9 @@ class EventManager:
     ):
 
         if member.bot:
-
             return
 
-
         guild = member.guild
-
 
         try:
 
@@ -898,41 +721,28 @@ class EventManager:
 
             return
 
-
         previous = invite_cache.get(
-
             guild.id,
-
             {}
-
         )
 
-
         used_invite = None
-
 
         for invite in current_invites:
 
             old_uses = previous.get(
-
                 invite.code,
-
                 0
-
             )
-
 
             new_uses = (
                 invite.uses or 0
             )
 
-
             if new_uses > old_uses:
 
                 used_invite = invite
-
                 break
-
 
         invite_cache[
             guild.id
@@ -945,60 +755,32 @@ class EventManager:
 
         }
 
-
         if not used_invite:
-
             return
 
-
-        inviter = (
-            used_invite.inviter
-        )
-
+        inviter = used_invite.inviter
 
         if not inviter:
-
             return
-
 
         if inviter.bot:
-
             return
 
-
         add_invite(
-
             guild.id,
-
             inviter.id,
-
             1
-
         )
-
 
         results = process_invite_tasks(
-
             guild.id,
-
             inviter.id
-
         )
-
-
-        channel = (
-            guild.system_channel
-        )
-
 
         await self.send_completed_tasks(
-
-            channel,
-
+            guild.system_channel,
             inviter,
-
             results
-
         )
 
 
@@ -1013,59 +795,23 @@ class EventManager:
     ):
 
         if before.nick == after.nick:
-
             return
-
 
         if after.bot:
-
             return
 
-
-        guild_id = (
-            after.guild.id
-        )
-
-        user_id = (
-            after.id
-        )
-
-
-        # ----------------------------------------------------
-        # Ignore first-time nickname initialization
-        # ----------------------------------------------------
-
-        if (
-            before.nick is None
-            and
-            after.nick is None
-        ):
-
-            return
-
+        guild_id = after.guild.id
+        user_id = after.id
 
         result = process_nickname_task(
-
             guild_id,
-
             user_id
-
         )
-
-
-        channel = (
-            after.guild.system_channel
-        )
-
 
         await self.send_completed_tasks(
-
-            channel,
-
+            after.guild.system_channel,
             after,
-
             [result]
-
         )
 
 
@@ -1081,21 +827,22 @@ class EventManager:
     ):
 
         if not channel:
-
             return
-
 
         if not results:
-
             return
 
+        guild = get_guild(
+            member.guild.id
+        )
+
+        if not guild:
+            return
 
         for result in results:
 
             if not result:
-
                 continue
-
 
             if not result.get(
                 "completed",
@@ -1104,26 +851,24 @@ class EventManager:
 
                 continue
 
-
             task = result.get(
                 "task"
             )
 
-
             if not task:
-
                 continue
 
-
-            guild = get_guild(
-                member.guild.id
+            next_task = result.get(
+                "next_task"
             )
 
+            next_task_number = result.get(
+                "next_task_number"
+            )
 
-            if not guild:
-
-                continue
-
+            total_tasks = result.get(
+                "total_tasks"
+            )
 
             embed = task_completed_embed(
 
@@ -1131,10 +876,15 @@ class EventManager:
 
                 guild["currency_name"],
 
-                guild["currency_symbol"]
+                guild["currency_symbol"],
+
+                next_task=next_task,
+
+                next_task_number=next_task_number,
+
+                total_tasks=total_tasks
 
             )
-
 
             try:
 
@@ -1163,10 +913,19 @@ class EventManager:
         new_level
     ):
 
-        if not channel:
+        guild = get_guild(
+            member.guild.id
+        )
 
+        if not guild:
             return
 
+        if not guild.get(
+            "level_up_enabled",
+            True
+        ):
+
+            return
 
         embed = level_up_embed(
 
@@ -1174,16 +933,33 @@ class EventManager:
 
             old_level,
 
-            new_level
+            new_level,
+
+            mention=guild.get(
+                "level_up_mention",
+                True
+            ),
+
+            message=guild.get(
+                "level_up_message"
+            )
 
         )
 
-
         try:
+
+            content = None
+
+            if guild.get(
+                "level_up_mention",
+                True
+            ):
+
+                content = member.mention
 
             await channel.send(
 
-                content=member.mention,
+                content=content,
 
                 embed=embed
 
@@ -1206,13 +982,20 @@ def register_events(
         bot
     )
 
-
     @bot.event
     async def on_message(
         message
     ):
 
         await manager.on_message(
+            message
+        )
+
+        # ----------------------------------------------------
+        # Keep normal commands working.
+        # ----------------------------------------------------
+
+        await bot.process_commands(
             message
         )
 
