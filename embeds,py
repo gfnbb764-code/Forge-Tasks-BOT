@@ -1,0 +1,1165 @@
+# ============================================================
+# TASK BOT — EMBEDS.PY
+# Professional Discord Embeds
+# Python 3.11+
+# ============================================================
+
+import discord
+
+from datetime import datetime, timezone
+
+from tasks import (
+    get_task_display,
+    progress_bar,
+)
+
+
+# ============================================================
+# COLORS
+# ============================================================
+
+COLOR_MAIN = discord.Color.blurple()
+COLOR_SUCCESS = discord.Color.green()
+COLOR_WARNING = discord.Color.orange()
+COLOR_ERROR = discord.Color.red()
+COLOR_GOLD = discord.Color.gold()
+COLOR_LEVEL = discord.Color.purple()
+
+
+# ============================================================
+# TIME
+# ============================================================
+
+def now():
+
+    return datetime.now(
+        timezone.utc
+    )
+
+
+# ============================================================
+# BASE EMBED
+# ============================================================
+
+def create_embed(
+    title,
+    description="",
+    color=COLOR_MAIN
+):
+
+    embed = discord.Embed(
+
+        title=title,
+
+        description=description,
+
+        color=color,
+
+        timestamp=now()
+
+    )
+
+    embed.set_footer(
+        text="Task Bot"
+    )
+
+    return embed
+
+
+# ============================================================
+# TASK EMOJI
+# ============================================================
+
+def task_emoji(
+    task_type
+):
+
+    emojis = {
+
+        "messages": "💬",
+
+        "images": "🖼️",
+
+        "invites": "📨",
+
+        "afk": "💤",
+
+        "level": "⭐",
+
+        "nickname": "✏️",
+
+    }
+
+    return emojis.get(
+        task_type,
+        "📋"
+    )
+
+
+# ============================================================
+# PERIOD EMOJI
+# ============================================================
+
+def period_emoji(
+    period
+):
+
+    emojis = {
+
+        "daily": "☀️",
+
+        "weekly": "📅",
+
+        "monthly": "🌙",
+
+    }
+
+    return emojis.get(
+        period,
+        "📋"
+    )
+
+
+# ============================================================
+# TASKS EMBED
+# ============================================================
+
+def tasks_embed(
+    guild_id,
+    user_id,
+    currency_name,
+    currency_symbol
+):
+
+    embed = create_embed(
+
+        "📋 مهامك",
+
+        (
+            f"أنجز المهام واحصل على "
+            f"**{currency_name} {currency_symbol}** 🪙"
+        )
+
+    )
+
+
+    periods = [
+
+        (
+            "daily",
+            "☀️ المهام اليومية"
+        ),
+
+        (
+            "weekly",
+            "📅 المهام الأسبوعية"
+        ),
+
+        (
+            "monthly",
+            "🌙 المهام الشهرية"
+        ),
+
+    ]
+
+
+    for period, title in periods:
+
+        tasks = get_task_display(
+
+            guild_id,
+
+            user_id,
+
+            period
+
+        )
+
+
+        if not tasks:
+
+            if period == "monthly":
+
+                value = (
+                    "لا توجد مهام شهرية حالياً."
+                )
+
+            else:
+
+                value = (
+                    "لا توجد مهام متاحة."
+                )
+
+
+        else:
+
+            lines = []
+
+
+            for task in tasks:
+
+                emoji = task_emoji(
+                    task.get(
+                        "type",
+                        ""
+                    )
+                )
+
+
+                if task["completed"]:
+
+                    status = "✅"
+
+                else:
+
+                    status = "⬜"
+
+
+                lines.append(
+
+                    f"{status} {emoji} "
+                    f"**{task['name']}**\n"
+
+                    f"└ {task['description']}\n"
+
+                    f"└ {task['bar']} "
+                    f"`{task['progress']}/{task['target']}`\n"
+
+                    f"└ 🪙 **{task['reward']} "
+                    f"{currency_name}**"
+
+                )
+
+
+            value = "\n\n".join(
+                lines
+            )
+
+
+        embed.add_field(
+
+            name=title,
+
+            value=value,
+
+            inline=False
+
+        )
+
+
+    embed.set_footer(
+
+        text=(
+            "Task Bot • أنجز المهام وارفع مستواك"
+        )
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# PROFILE EMBED
+# ============================================================
+
+def profile_embed(
+    member,
+    user,
+    currency_name,
+    currency_symbol,
+    current_xp,
+    required_xp,
+    percentage
+):
+
+    embed = create_embed(
+
+        f"👤 {member.display_name}",
+
+        "إحصائيات حسابك وتقدمك",
+
+        COLOR_MAIN
+
+    )
+
+
+    embed.set_thumbnail(
+
+        url=member.display_avatar.url
+
+    )
+
+
+    filled = int(
+        percentage / 10
+    )
+
+
+    filled = max(
+        0,
+        min(
+            filled,
+            10
+        )
+    )
+
+
+    bar = (
+
+        "🟦" * filled +
+
+        "⬜" * (
+            10 - filled
+        )
+
+    )
+
+
+    embed.add_field(
+
+        name="🪙 الرصيد",
+
+        value=(
+
+            f"**{user['coins']}** "
+            f"{currency_symbol}"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="⭐ المستوى",
+
+        value=(
+
+            f"**Level "
+            f"{user['level']}**"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="✨ XP",
+
+        value=(
+
+            f"**{current_xp} / "
+            f"{required_xp}**"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📊 التقدم",
+
+        value=(
+
+            f"{bar}\n"
+            f"**{percentage}%**"
+
+        ),
+
+        inline=False
+
+    )
+
+
+    embed.add_field(
+
+        name="💬 الرسائل",
+
+        value=str(
+            user["messages"]
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="🖼️ الصور",
+
+        value=str(
+            user["images"]
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📨 الدعوات",
+
+        value=str(
+            user["invites"]
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="🎙️ وقت الصوت",
+
+        value=format_seconds(
+            user["voice_seconds"]
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="💤 وقت AFK",
+
+        value=format_seconds(
+            user["afk_seconds"]
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="🏅 العملة",
+
+        value=currency_name,
+
+        inline=True
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# BALANCE EMBED
+# ============================================================
+
+def balance_embed(
+    user,
+    currency_name,
+    currency_symbol
+):
+
+    embed = create_embed(
+
+        "🪙 رصيدك",
+
+        (
+
+            f"لديك **{user['coins']}** "
+            f"{currency_symbol}\n\n"
+
+            f"العملة: **{currency_name}**"
+
+        ),
+
+        COLOR_GOLD
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# TOP EMBED
+# ============================================================
+
+def top_embed(
+    users,
+    guild,
+    members
+):
+
+    embed = create_embed(
+
+        "🏆 Top 10",
+
+        (
+            "أعلى الأعضاء حسب "
+            "الرصيد الحالي."
+        ),
+
+        COLOR_GOLD
+
+    )
+
+
+    medals = [
+
+        "🥇",
+
+        "🥈",
+
+        "🥉",
+
+    ]
+
+
+    lines = []
+
+
+    for index, user in enumerate(
+        users
+    ):
+
+        member = members.get(
+            user["user_id"]
+        )
+
+
+        if member:
+
+            name = member.display_name
+
+        else:
+
+            name = (
+                f"<@{user['user_id']}>"
+            )
+
+
+        if index < 3:
+
+            rank = medals[index]
+
+        else:
+
+            rank = (
+                f"**#{index + 1}**"
+            )
+
+
+        lines.append(
+
+            f"{rank} "
+            f"**{name}** — "
+            f"{user['coins']} "
+            f"{guild['currency_symbol']}"
+
+        )
+
+
+    if not lines:
+
+        lines.append(
+            "لا يوجد أعضاء في التوب حالياً."
+        )
+
+
+    embed.description = (
+        "\n".join(lines)
+    )
+
+
+    embed.add_field(
+
+        name="📊 الترتيب",
+
+        value=(
+
+            "يتم الترتيب حسب "
+            "**الكوينز**."
+
+        ),
+
+        inline=False
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# TASK COMPLETED EMBED
+# ============================================================
+
+def task_completed_embed(
+    task,
+    currency_name,
+    currency_symbol
+):
+
+    embed = create_embed(
+
+        "🎉 تم إنجاز المهمة!",
+
+        (
+
+            f"أحسنت! أكملت مهمة:\n\n"
+
+            f"**{task['name']}**\n\n"
+
+            f"🎁 المكافأة: "
+            f"**{task['reward']} "
+            f"{currency_name} "
+            f"{currency_symbol}**"
+
+        ),
+
+        COLOR_SUCCESS
+
+    )
+
+
+    embed.add_field(
+
+        name="🚀 الخطوة التالية",
+
+        value=(
+
+            "افتح `/tasks` "
+            "وشوف باقي المهام."
+
+        ),
+
+        inline=False
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# LEVEL UP EMBED
+# ============================================================
+
+def level_up_embed(
+    member,
+    old_level,
+    new_level
+):
+
+    embed = create_embed(
+
+        "🎊 Level Up!",
+
+        (
+
+            f"مبروك {member.mention}! 🔥\n\n"
+
+            f"ارتفع مستواك من "
+            f"**Level {old_level}** "
+            f"إلى "
+            f"**Level {new_level}** ⭐"
+
+        ),
+
+        COLOR_LEVEL
+
+    )
+
+
+    embed.set_thumbnail(
+
+        url=member.display_avatar.url
+
+    )
+
+
+    embed.add_field(
+
+        name="⭐ المستوى الجديد",
+
+        value=(
+            f"**Level {new_level}**"
+        ),
+
+        inline=False
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# COINS ADDED EMBED
+# ============================================================
+
+def coins_added_embed(
+    amount,
+    reason,
+    currency_name,
+    currency_symbol
+):
+
+    embed = create_embed(
+
+        "🪙 تمت إضافة المكافأة",
+
+        (
+
+            f"تمت إضافة:\n\n"
+
+            f"**+{amount} "
+            f"{currency_symbol}**\n\n"
+
+            f"السبب: **{reason}**"
+
+        ),
+
+        COLOR_SUCCESS
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# COINS REMOVED EMBED
+# ============================================================
+
+def coins_removed_embed(
+    amount,
+    reason,
+    currency_name,
+    currency_symbol
+):
+
+    embed = create_embed(
+
+        "🪙 تم خصم الكوينز",
+
+        (
+
+            f"تم خصم:\n\n"
+
+            f"**-{amount} "
+            f"{currency_symbol}**\n\n"
+
+            f"السبب: **{reason}**"
+
+        ),
+
+        COLOR_WARNING
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# EXCHANGE EMBED
+# ============================================================
+
+def exchange_embed(
+    currency,
+    coins_spent,
+    external_amount
+):
+
+    embed = create_embed(
+
+        "💱 عملية تحويل",
+
+        (
+
+            "تم تنفيذ عملية التحويل بنجاح! 🎉"
+
+        ),
+
+        COLOR_SUCCESS
+
+    )
+
+
+    embed.add_field(
+
+        name="🪙 الكوينز المستخدمة",
+
+        value=(
+            f"**{coins_spent}**"
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="💰 العملة",
+
+        value=(
+
+            f"**{external_amount} "
+            f"{currency['symbol']} "
+            f"{currency['name']}**"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📊 سعر التحويل",
+
+        value=(
+
+            f"{currency['coins_required']} "
+            f"Coins = "
+
+            f"{currency['external_amount']} "
+            f"{currency['symbol']}"
+
+        ),
+
+        inline=False
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# ERROR EMBED
+# ============================================================
+
+def error_embed(
+    title,
+    description
+):
+
+    return create_embed(
+
+        f"❌ {title}",
+
+        description,
+
+        COLOR_ERROR
+
+    )
+
+
+# ============================================================
+# WARNING EMBED
+# ============================================================
+
+def warning_embed(
+    title,
+    description
+):
+
+    return create_embed(
+
+        f"⚠️ {title}",
+
+        description,
+
+        COLOR_WARNING
+
+    )
+
+
+# ============================================================
+# SUCCESS EMBED
+# ============================================================
+
+def success_embed(
+    title,
+    description
+):
+
+    return create_embed(
+
+        f"✅ {title}",
+
+        description,
+
+        COLOR_SUCCESS
+
+    )
+
+
+# ============================================================
+# SETUP EMBED
+# ============================================================
+
+def setup_embed(
+    guild
+):
+
+    embed = create_embed(
+
+        "⚙️ إعدادات Task Bot",
+
+        (
+
+            "تم تحديث إعدادات السيرفر.\n\n"
+
+            "يمكنك التحكم في نظام المهام "
+            "والعملات والـXP من إعدادات البوت."
+
+        ),
+
+        COLOR_MAIN
+
+    )
+
+
+    embed.add_field(
+
+        name="🌐 اللغة",
+
+        value=(
+            guild["language"]
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="🪙 العملة",
+
+        value=(
+
+            f"{guild['currency_symbol']} "
+            f"{guild['currency_name']}"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="💬 روم الرسائل",
+
+        value=(
+
+            f"<#{guild['message_channel']}>"
+
+            if guild["message_channel"]
+
+            else "غير محدد"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="📋 المهام",
+
+        value=(
+
+            f"☀️ يومية: "
+            f"{'مفعلة' if guild['daily_enabled'] else 'معطلة'}\n"
+
+            f"📅 أسبوعية: "
+            f"{'مفعلة' if guild['weekly_enabled'] else 'معطلة'}\n"
+
+            f"🌙 شهرية: "
+            f"{'مفعلة' if guild['monthly_enabled'] else 'معطلة'}"
+
+        ),
+
+        inline=False
+
+    )
+
+
+    embed.add_field(
+
+        name="✨ نظام XP",
+
+        value=(
+
+            "مفعل"
+
+            if guild["xp_enabled"]
+
+            else "معطل"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    embed.add_field(
+
+        name="🔔 التذكيرات",
+
+        value=(
+
+            "مفعلة"
+
+            if guild["reminders_enabled"]
+
+            else "معطلة"
+
+        ),
+
+        inline=True
+
+    )
+
+
+    return embed
+
+
+# ============================================================
+# REMINDER EMBED
+# ============================================================
+
+def reminder_embed(
+    tasks,
+    currency_name,
+    currency_symbol
+):
+
+    embed = create_embed(
+
+        "🔔 تذكير بالمهام",
+
+        (
+
+            "عندك مهام لسا ما خلصتها! 👀\n"
+            "لا تضيع المكافآت."
+
+        ),
+
+        COLOR_WARNING
+
+    )
+
+
+    lines = []
+
+
+    for task in tasks:
+
+        if task["completed"]:
+
+            continue
+
+
+        lines.append(
+
+            f"⬜ **{task['name']}**\n"
+
+            f"└ {task['bar']} "
+            f"`{task['progress']}/{task['target']}`\n"
+
+            f"└ 🪙 {task['reward']} "
+            f"{currency_symbol}"
+
+        )
+
+
+    if not lines:
+
+        embed.description = (
+            "🎉 ما عندك مهام ناقصة!"
+        )
+
+    else:
+
+        embed.add_field(
+
+            name="📋 المهام المتبقية",
+
+            value="\n\n".join(
+                lines
+            ),
+
+            inline=False
+
+        )
+
+
+    return embed
+
+
+# ============================================================
+# FORMAT SECONDS
+# ============================================================
+
+def format_seconds(
+    seconds
+):
+
+    seconds = max(
+        0,
+        int(seconds)
+    )
+
+
+    hours = seconds // 3600
+
+    minutes = (
+        seconds % 3600
+    ) // 60
+
+    remaining = (
+        seconds % 60
+    )
+
+
+    if hours:
+
+        return (
+            f"{hours} ساعة "
+            f"{minutes} دقيقة"
+        )
+
+
+    if minutes:
+
+        return (
+            f"{minutes} دقيقة "
+            f"{remaining} ثانية"
+        )
+
+
+    return (
+        f"{remaining} ثانية"
+    )
