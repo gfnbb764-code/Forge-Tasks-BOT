@@ -22,7 +22,7 @@ from database import (
     delete_custom_task,
 )
 
-from tasks import get_all_tasks, register_custom_task, unregister_custom_task
+from tasks import get_all_tasks, register_custom_task, unregister_custom_task, TASK_GROUPS
 
 from embeds import (
     tasks_embed,
@@ -1150,6 +1150,28 @@ class SetupGroup(
         )
 
 
+    @app_commands.command(name="list-tasks", description="عرض كل المهام الافتراضية والمخصصة")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def list_tasks(self, interaction):
+        custom_rows = {row["task_key"]: row for row in get_custom_tasks(interaction.guild.id)}
+        embed = discord.Embed(
+            title="📚 قائمة مهام السيرفر",
+            description="تظهر هنا المهام الأساسية الجاهزة والمهام التي أنشأتها أنت.",
+            color=discord.Color.blurple(),
+        )
+        for period, title in (("daily", "☀️ اليومية"), ("weekly", "📅 الأسبوعية"), ("monthly", "🌙 الشهرية")):
+            lines = []
+            for key, task in TASK_GROUPS.get(period, {}).items():
+                if key.startswith("custom_"):
+                    continue
+                lines.append(f"• **{task['name']}** — `{task['target']}` — 💰 {task['reward']}")
+            for key, row in custom_rows.items():
+                if row["period"] == period:
+                    lines.append(f"• 🛠️ **{row['name']}** — `{row['target']}` — 💰 {row['reward']}")
+            embed.add_field(name=title, value="\n".join(lines) or "لا توجد مهام.", inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
     # ========================================================
     # /setup status
     # ========================================================
@@ -1531,6 +1553,7 @@ class CommandManager:
                 "`/setup levelup` — Level Up\n"
                 "`/setup currency` — العملة\n"
                 "`/setup periods` — فترات المهام\n"
+                "`/setup list-tasks` — كل المهام الافتراضية والمخصصة\n"
                 "`/setup status` — حالة الإعدادات"
             ),
             inline=False
