@@ -27,6 +27,24 @@ COLOR_ERROR = discord.Color.red()
 COLOR_GOLD = discord.Color.gold()
 COLOR_LEVEL = discord.Color.purple()
 
+TASK_EN = {
+    "إرسال 25 رسالة": ("Send 25 messages", "Send 25 messages in the configured task channel."),
+    "البقاء في الصوت 10 دقائق": ("Stay in voice for 10 minutes", "Join any voice channel and stay for 10 minutes."),
+    "دعوة شخصين للسيرفر": ("Invite 2 members", "Bring two real members through valid invite links."),
+    "استعمال 5 أوامر": ("Use 5 commands", "Use five bot commands."),
+    "التفاعل مع عضوين لمدة 5 دقائق": ("Interact with 2 members", "Mention or reply to two members."),
+    "دعوة 5 أشخاص بروابط مختلفة": ("Invite 5 members with different links", "Bring five members through different invite links."),
+    "تغيير الاسم المستعار 3 مرات": ("Change nickname 3 times", "Change your server nickname three times."),
+    "التحدث في الصوت 8 دقائق": ("Talk in voice for 8 minutes", "Stay connected in a voice channel for eight minutes."),
+    "امتلاك رتبة مخصصة": ("Own a custom role", "Have the role configured by an administrator."),
+    "البقاء في الصوت 30 دقيقة": ("Stay in voice for 30 minutes", "Join any voice channel for thirty minutes."),
+    "دعوة 10 أشخاص مع رتبة": ("Invite 10 members with a role", "Invite ten members while owning the configured role."),
+    "التفاعل مع 4 أشخاص 10 دقائق": ("Interact with 4 members", "Mention or reply to four members."),
+    "الوصول إلى Level 15": ("Reach Level 15", "Keep earning XP until level 15."),
+    "مشاهدة مقطع لمدة 10 دقائق": ("Watch a video for 10 minutes", "Complete the configured video task."),
+    "امتلاك المركز الأول": ("Reach the top 1", "Hold first place on the server leaderboard."),
+}
+
 
 # ============================================================
 # TIME
@@ -197,6 +215,9 @@ def tasks_embed(
 
     ]
 
+    if english:
+        periods = [("daily", "☀️ Daily tasks"), ("weekly", "📅 Weekly tasks"), ("monthly", "🌙 Monthly tasks")]
+
 
     for period, title in periods:
 
@@ -270,15 +291,16 @@ def tasks_embed(
             )
 
 
+            task_name, task_description = TASK_EN.get(task["name"], (task["name"], task["description"])) if english else (task["name"], task["description"])
             value = (
 
                 f"🚀 **المهمة "
                 f"{task['task_number']}/"
                 f"{task['total_tasks']}**\n\n"
 
-                f"{emoji} **{task['name']}**\n"
+                f"{emoji} **{task_name}**\n"
 
-                f"└ {task['description']}\n\n"
+                f"└ {task_description}\n\n"
 
                 f"{task['bar']} "
                 f"`{task['progress']}/"
@@ -926,6 +948,7 @@ def task_completed_embed(
 
     english = language == "en"
     prefix = "Great work! You completed:\n\n" if english else "أحسنت! أكملت مهمة:\n\n"
+    task_name = TASK_EN.get(task["name"], (task["name"], ""))[0] if english else task["name"]
 
     embed = create_embed(
 
@@ -933,7 +956,7 @@ def task_completed_embed(
 
         (
             prefix
-            + f"**{task['name']}**\n\n"
+            + f"**{task_name}**\n\n"
 
             f"🎁 المكافأة: "
             f"**{task['reward']} "

@@ -19,6 +19,8 @@ from database import (
     get_task_state,
     set_task_index,
     advance_task_index,
+    get_user_rank,
+    get_custom_tasks,
 )
 
 
@@ -29,43 +31,35 @@ from database import (
 DAILY_TASKS = {
 
     "daily_messages": {
-        "name": "إرسال 50 رسالة",
-        "description": "أرسل 50 رسالة في الروم المحدد.",
+        "name": "إرسال 25 رسالة",
+        "description": "أرسل 25 رسالة في روم المهام المحدد.",
         "type": "messages",
-        "target": 50,
+        "target": 25,
         "reward": 10,
     },
 
-    "daily_invites": {
-        "name": "دعوة 3 أشخاص",
-        "description": "ادعُ 3 أشخاص إلى السيرفر.",
-        "type": "invites",
-        "target": 3,
-        "reward": 20,
-    },
-
     "daily_afk": {
-        "name": "البقاء في الروم الصوتي 30 دقيقة",
-        "description": "ابقَ في روم صوتي لمدة 30 دقيقة.",
+        "name": "البقاء في الصوت 10 دقائق",
+        "description": "ادخل أي روم صوتي وابقَ فيه 10 دقائق.",
         "type": "afk",
-        "target": 1800,
-        "reward": 30,
-    },
-
-    "daily_level5": {
-        "name": "الوصول إلى Level 5",
-        "description": "وصل إلى المستوى الخامس.",
-        "type": "level",
-        "target": 5,
-        "reward": 50,
-    },
-
-    "daily_images": {
-        "name": "إرسال 10 صور",
-        "description": "أرسل 10 صور.",
-        "type": "images",
-        "target": 10,
+        "target": 600,
         "reward": 20,
+    },
+
+    "daily_invites": {
+        "name": "دعوة شخصين للسيرفر",
+        "description": "ادعُ شخصين فعليًا عبر روابط دعوة صالحة.",
+        "type": "invites",
+        "target": 2,
+        "reward": 20,
+    },
+
+    "daily_commands": {
+        "name": "استعمال 5 أوامر",
+        "description": "استخدم خمسة أوامر من أوامر البوت.",
+        "type": "commands",
+        "target": 5,
+        "reward": 15,
     },
 
 }
@@ -73,44 +67,44 @@ DAILY_TASKS = {
 
 WEEKLY_TASKS = {
 
-    "weekly_afk": {
-        "name": "البقاء في الروم الصوتي ساعة",
-        "description": "ابقَ في روم صوتي لمدة ساعة.",
-        "type": "afk",
-        "target": 3600,
+    "weekly_interactions": {
+        "name": "التفاعل مع عضوين لمدة 5 دقائق",
+        "description": "اذكر عضوين أو قم بالرد عليهما داخل السيرفر.",
+        "type": "interactions",
+        "target": 2,
         "reward": 30,
     },
 
-    "weekly_messages": {
-        "name": "إرسال 200 رسالة",
-        "description": "أرسل 200 رسالة في الروم المحدد.",
-        "type": "messages",
-        "target": 200,
-        "reward": 50,
-    },
-
     "weekly_invites": {
-        "name": "دعوة 10 أشخاص",
-        "description": "ادعُ 10 أشخاص إلى السيرفر.",
+        "name": "دعوة 5 أشخاص بروابط مختلفة",
+        "description": "اجعل خمسة أعضاء يدخلون عبر روابط دعوة مختلفة.",
         "type": "invites",
-        "target": 10,
-        "reward": 70,
-    },
-
-    "weekly_images": {
-        "name": "إرسال 30 صورة",
-        "description": "أرسل 30 صورة.",
-        "type": "images",
-        "target": 30,
-        "reward": 50,
+        "target": 5,
+        "reward": 40,
     },
 
     "weekly_nickname": {
-        "name": "تغيير الاسم المستعار",
-        "description": "غيّر اسمك المستعار مرة واحدة.",
+        "name": "تغيير الاسم المستعار 3 مرات",
+        "description": "غيّر اسمك المستعار ثلاث مرات.",
         "type": "nickname",
-        "target": 1,
+        "target": 3,
         "reward": 20,
+    },
+
+    "weekly_voice": {
+        "name": "التحدث في الصوت 8 دقائق",
+        "description": "تكلم أو ابقَ متصلًا في أي روم صوتي 8 دقائق.",
+        "type": "afk",
+        "target": 480,
+        "reward": 50,
+    },
+
+    "weekly_role": {
+        "name": "امتلاك رتبة مخصصة",
+        "description": "امتلك الرتبة التي يحددها الأدمن من إعدادات المهمة.",
+        "type": "role",
+        "target": 1,
+        "reward": 30,
     },
 
 }
@@ -123,7 +117,38 @@ WEEKLY_TASKS = {
 # لا توجد مهام شهرية حاليًا.
 # يمكن إضافة المهام لاحقًا بدون تغيير نظام المهام.
 
-MONTHLY_TASKS = {}
+MONTHLY_TASKS = {
+    "monthly_voice": {
+        "name": "البقاء في الصوت 30 دقيقة",
+        "description": "ادخل أي روم صوتي لمدة 30 دقيقة.",
+        "type": "afk", "target": 1800, "reward": 60,
+    },
+    "monthly_invites": {
+        "name": "دعوة 10 أشخاص مع رتبة",
+        "description": "ادعُ عشرة أعضاء مع امتلاك الرتبة المخصصة.",
+        "type": "invites_role", "target": 10, "reward": 50,
+    },
+    "monthly_interactions": {
+        "name": "التفاعل مع 4 أشخاص 10 دقائق",
+        "description": "اذكر أو رد على أربعة أعضاء في روم المهام.",
+        "type": "interactions", "target": 4, "reward": 70,
+    },
+    "monthly_level15": {
+        "name": "الوصول إلى Level 15",
+        "description": "واصل اكتساب XP حتى تصل إلى المستوى 15.",
+        "type": "level", "target": 15, "reward": 80,
+    },
+    "monthly_youtube": {
+        "name": "مشاهدة مقطع لمدة 10 دقائق",
+        "description": "شاهد الرابط الذي يحدده الأدمن لمدة 10 دقائق.",
+        "type": "youtube", "target": 600, "reward": 100,
+    },
+    "monthly_top": {
+        "name": "امتلاك المركز الأول",
+        "description": "كن صاحب المركز الأول في ترتيب السيرفر.",
+        "type": "top", "target": 1, "reward": 100,
+    },
+}
 
 
 # ============================================================
@@ -161,6 +186,32 @@ TASK_ORDER = {
     "monthly": list(MONTHLY_TASKS.keys()),
 
 }
+
+
+def _custom_task_dict(row):
+    return {
+        "name": row["name"],
+        "description": row["description"],
+        "type": row["task_type"],
+        "target": row["target"],
+        "reward": row["reward"],
+        "role_id": row["role_id"],
+        "channel_id": row["channel_id"],
+        "url": row["url"],
+        "guild_id": row["guild_id"],
+    }
+
+
+def register_custom_task(row):
+    period = row["period"]
+    TASK_GROUPS.setdefault(period, {})[row["task_key"]] = _custom_task_dict(row)
+    TASK_ORDER.setdefault(period, [])
+    if row["task_key"] not in TASK_ORDER[period]:
+        TASK_ORDER[period].append(row["task_key"])
+
+
+for _custom_row in get_custom_tasks():
+    register_custom_task(_custom_row)
 
 
 # ============================================================
@@ -652,13 +703,31 @@ def calculate_task_progress(
     # ----------------------------------------
 
     if task_type == "invites":
-
+        stat_name = "unique_invites" if period == "weekly" else "invites"
         return get_period_stat_value(
             guild_id,
             user_id,
             period,
-            "invites"
+            stat_name
         )
+
+    if task_type == "invites_role":
+        return get_period_stat_value(guild_id, user_id, period, "invites")
+
+    if task_type == "commands":
+        return get_period_stat_value(guild_id, user_id, period, "commands_used")
+
+    if task_type in ("interactions", "interaction"):
+        return get_period_stat_value(guild_id, user_id, period, "interaction_count")
+
+    if task_type == "youtube":
+        return get_period_stat_value(guild_id, user_id, period, "youtube_seconds")
+
+    if task_type == "top":
+        return 1 if get_user_rank(guild_id, user_id) == 1 else 0
+
+    if task_type == "role":
+        return 0
 
 
     # ----------------------------------------
@@ -1191,16 +1260,14 @@ def process_image_tasks(
 
 def process_invite_tasks(
     guild_id,
-    user_id
+    user_id,
+    member=None
 ):
 
     results = []
 
 
-    for period in (
-        "daily",
-        "weekly",
-    ):
+    for period in ("daily", "weekly", "monthly"):
 
         task_id = get_active_task_id(
             guild_id,
@@ -1225,9 +1292,14 @@ def process_invite_tasks(
             continue
 
 
-        if task["type"] != "invites":
+        if task["type"] not in ("invites", "invites_role"):
 
             continue
+
+        if task["type"] == "invites_role":
+            role_id = task.get("role_id")
+            if role_id and (not member or not any(role.id == int(role_id) for role in member.roles)):
+                continue
 
 
         result = sync_active_task_progress(
@@ -1257,10 +1329,7 @@ def process_voice_tasks(
     results = []
 
 
-    for period in (
-        "daily",
-        "weekly",
-    ):
+    for period in ("daily", "weekly", "monthly"):
 
         task_id = get_active_task_id(
             guild_id,
@@ -1319,10 +1388,22 @@ def process_voice_tasks(
 
 def process_level_tasks(
     guild_id,
-    user_id
+    user_id,
+    period=None
 ):
 
-    period = "daily"
+    periods = (period,) if period else ("daily",)
+    output = []
+    for current_period in periods:
+        result = _process_level_task_for_period(guild_id, user_id, current_period)
+        if result.get("success"):
+            output.append(result)
+    if period:
+        return output[0] if output else {"success": False, "completed": False, "reason": "no_active_task"}
+    return output
+
+
+def _process_level_task_for_period(guild_id, user_id, period):
 
 
     task_id = get_active_task_id(
@@ -1453,6 +1534,45 @@ def process_nickname_task(
         user_id,
         period
     )
+
+
+def process_command_tasks(guild_id, user_id):
+    results = []
+    task_id = get_active_task_id(guild_id, user_id, "daily")
+    task = get_task(task_id, "daily") if task_id else None
+    if task and task["type"] == "commands":
+        results.append(sync_active_task_progress(guild_id, user_id, "daily"))
+    return results
+
+
+def process_interaction_tasks(guild_id, user_id):
+    results = []
+    for period in ("weekly", "monthly"):
+        task_id = get_active_task_id(guild_id, user_id, period)
+        task = get_task(task_id, period) if task_id else None
+        if task and task["type"] in ("interactions", "interaction"):
+            results.append(sync_active_task_progress(guild_id, user_id, period))
+    return results
+
+
+def process_top_tasks(guild_id, user_id):
+    task_id = get_active_task_id(guild_id, user_id, "monthly")
+    task = get_task(task_id, "monthly") if task_id else None
+    if task and task["type"] == "top":
+        return [sync_active_task_progress(guild_id, user_id, "monthly")]
+    return []
+
+
+def process_role_task(guild_id, user_id, member):
+    results = []
+    for period in ("weekly", "monthly"):
+        task_id = get_active_task_id(guild_id, user_id, period)
+        task = get_task(task_id, period) if task_id else None
+        if not task or task["type"] != "role" or not task.get("role_id"):
+            continue
+        if any(role.id == int(task["role_id"]) for role in member.roles):
+            results.append(update_task(guild_id, user_id, task_id, period, 1))
+    return results
 
 
 # ============================================================

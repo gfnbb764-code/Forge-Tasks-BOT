@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import os
+import asyncio
 import sqlite3
 from datetime import datetime, timezone
 
@@ -666,9 +667,9 @@ class TaskBot(commands.Bot):
 
             synced_commands = await self.tree.sync()
 
-        if not voice_tracker.is_running():
-
-            voice_tracker.start()
+        if not event_manager.voice_loop_task:
+            await event_manager.start()
+            event_manager.voice_loop_task = asyncio.create_task(event_manager.voice_loop())
 
         print(
             "========================================"
@@ -707,9 +708,11 @@ bot = TaskBot()
 # tree with Discord.  Previously this entry point only synced an empty tree,
 # because the command definitions in commands.py were never loaded.
 from commands import register_commands, setup_error_handler
+from events import register_events
 
 register_commands(bot)
 bot.tree.on_error = setup_error_handler
+event_manager = register_events(bot)
 
 
 # ============================================================

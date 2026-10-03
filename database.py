@@ -608,6 +608,27 @@ def initialize_database(
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS custom_tasks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id INTEGER NOT NULL,
+            task_key TEXT NOT NULL,
+            period TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT NOT NULL,
+            task_type TEXT NOT NULL,
+            target INTEGER NOT NULL DEFAULT 1,
+            reward INTEGER NOT NULL DEFAULT 0,
+            role_id INTEGER,
+            channel_id INTEGER,
+            url TEXT,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT,
+            updated_at TEXT,
+            UNIQUE(guild_id, task_key)
+        )
+    """)
+
 
     # ========================================================
     # DATABASE MIGRATIONS
@@ -720,6 +741,11 @@ def initialize_database(
         "created_at",
         "TEXT"
     )
+
+    add_column_if_missing("users", "commands_used", "INTEGER DEFAULT 0")
+    add_column_if_missing("users", "interaction_count", "INTEGER DEFAULT 0")
+    add_column_if_missing("users", "unique_invites", "INTEGER DEFAULT 0")
+    add_column_if_missing("users", "youtube_seconds", "INTEGER DEFAULT 0")
 
     add_column_if_missing(
         "users",
@@ -1584,7 +1610,8 @@ def add_image(
 def add_invite(
     guild_id,
     user_id,
-    amount=1
+    amount=1,
+    unique=False
 ):
 
     create_user(
@@ -1597,13 +1624,15 @@ def add_invite(
     cursor.execute("""
         UPDATE users
 
-        SET invites = invites + ?
+        SET invites = invites + ?,
+            unique_invites = unique_invites + ?
 
         WHERE guild_id = ?
 
         AND user_id = ?
     """, (
         amount,
+        amount if unique else 0,
 
         guild_id,
 
@@ -1611,6 +1640,18 @@ def add_invite(
     ))
 
 
+    connection.commit()
+
+
+def increment_user_stat(guild_id, user_id, stat, amount=1):
+    allowed = {"commands_used", "interaction_count"}
+    if stat not in allowed:
+        raise ValueError("Unsupported user statistic")
+    create_user(guild_id, user_id)
+    cursor.execute(
+        f"UPDATE users SET {stat} = COALESCE({stat}, 0) + ? WHERE guild_id = ? AND user_id = ?",
+        (amount, guild_id, user_id),
+    )
     connection.commit()
 
 
@@ -3554,6 +3595,56 @@ def get_language(
 
         "language"
     )
+
+
+def create_custom_task(guild_id, task_key, period, name, description, task_type,
+                       target, reward, role_id=None, channel_id=None, url=None):
+    cursor.execute(
+        """INSERT INTO custom_tasks
+        (guild_id, task_key, period, name, description, task_type, target, reward,
+         role_id, channel_id, url, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (guild_id, task_key, period, name, description, task_type, int(target),
+         int(reward), role_id, channel_id, url, now(), now()),
+    )
+    connection.commit()
+    return get_custom_task(guild_id, task_key)
+
+
+def get_custom_task(guild_id, task_key):
+    cursor.execute("SELECT * FROM custom_tasks WHERE guild_id = ? AND task_key = ? AND enabled = 1",
+                   (guild_id, task_key))
+    return cursor.fetchone()
+
+
+def get_custom_tasks(guild_id=None, period=None):
+    query = "SELECT * FROM custom_tasks WHERE enabled = 1"
+    args = []
+    if guild_id is not None:
+        query += " AND guild_id = ?"
+        args.append(guild_id)
+    if period:
+        query += " AND period = ?"
+        args.append(period)
+    query += " ORDER BY id ASC"
+    cursor.execute(query, tuple(args))
+    return cursor.fetchall()
+
+
+def update_custom_task(guild_id, task_key, **changes):
+    allowed = {"name", "description", "period", "task_type", "target", "reward",
+               "role_id", "channel_id", "url", "enabled"}
+    changes = {key: value for key, value in changes.items() if key in allowed and value is not None}
+    if not changes:
+        return get_custom_task(guild_id, task_key)
+    if "target" in changes or "reward" in changes:
+        changes["target"] = int(changes.get("target", 1))
+        changes["reward"] = int(changes.get("reward", 0))
+    assignments = ", ".join(f"{key} = ?" for key in changes)
+    values = list(changes.values()) + [now(), guild_id, task_key]
+    cursor.execute(f"UPDATE custom_tasks SET {assignments}, updated_at = ? WHERE guild_id = ? AND task_key = ?", values)
+    connection.commit()
+    return get_custom_task(guild_id, task_key)
 
 
 # ============================================================

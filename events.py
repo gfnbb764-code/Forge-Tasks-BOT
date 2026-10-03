@@ -18,6 +18,8 @@ from database import (
     add_voice_time,
     add_afk_time,
     add_xp,
+    add_nickname_change,
+    increment_user_stat,
 )
 
 from tasks import (
@@ -28,6 +30,10 @@ from tasks import (
     process_level_tasks,
     process_nickname_task,
     get_active_task_display,
+    process_command_tasks,
+    process_interaction_tasks,
+    process_top_tasks,
+    process_role_task,
 )
 
 from embeds import (
@@ -68,6 +74,7 @@ class EventManager:
     ):
 
         self.bot = bot
+        self.voice_loop_task = None
 
 
     # ========================================================
@@ -204,6 +211,20 @@ class EventManager:
             results
         )
 
+        if message.mentions or message.reference:
+            increment_user_stat(guild_id, user_id, "interaction_count")
+            await self.send_completed_tasks(
+                message.channel,
+                message.author,
+                process_interaction_tasks(guild_id, user_id)
+            )
+
+        await self.send_completed_tasks(
+            message.channel,
+            message.author,
+            process_top_tasks(guild_id, user_id)
+        )
+
         # ----------------------------------------------------
         # LEVEL TASK
         # ----------------------------------------------------
@@ -217,6 +238,12 @@ class EventManager:
             message.channel,
             message.author,
             [result]
+        )
+
+        await self.send_completed_tasks(
+            message.channel,
+            message.author,
+            [process_level_tasks(guild_id, user_id, "monthly")]
         )
 
 
@@ -776,12 +803,14 @@ class EventManager:
         add_invite(
             guild.id,
             inviter.id,
-            1
+            1,
+            unique=True
         )
 
         results = process_invite_tasks(
             guild.id,
-            inviter.id
+            inviter.id,
+            inviter
         )
 
         await self.send_completed_tasks(
@@ -810,6 +839,8 @@ class EventManager:
         guild_id = after.guild.id
         user_id = after.id
 
+        add_nickname_change(guild_id, user_id)
+
         result = process_nickname_task(
             guild_id,
             user_id
@@ -819,6 +850,12 @@ class EventManager:
             after.guild.system_channel,
             after,
             [result]
+        )
+
+        await self.send_completed_tasks(
+            after.guild.system_channel,
+            after,
+            process_role_task(guild_id, user_id, after)
         )
 
 
@@ -1082,6 +1119,25 @@ def register_events(
             after
 
         )
+
+    @bot.event
+    async def on_app_command_completion(interaction, command):
+        if interaction.guild and interaction.user and not interaction.user.bot:
+            increment_user_stat(interaction.guild.id, interaction.user.id, "commands_used")
+            await manager.send_completed_tasks(
+                interaction.channel,
+                interaction.user,
+                process_command_tasks(interaction.guild.id, interaction.user.id),
+            )
+
+    @bot.command(name="بدء")
+    async def begin_task(ctx):
+        if not ctx.guild or ctx.author.bot:
+            return
+        guild = get_guild(ctx.guild.id)
+        get_user(ctx.guild.id, ctx.author.id)
+        await manager.send_daily_task_dm(ctx.author, guild)
+        await ctx.reply("تم إرسال مهمتك اليومية الأولى إلى الخاص ✅", mention_author=False)
 
 
     return manager
