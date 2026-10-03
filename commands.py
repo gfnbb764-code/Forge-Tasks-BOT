@@ -1597,7 +1597,8 @@ class CommandManager:
                 "`/setup periods` — فترات المهام\n"
                 "`/setup list-tasks` — كل المهام الافتراضية والمخصصة\n"
                 "`/setup status` — حالة الإعدادات\n"
-                "`/sendnof` — إرسال تذكير خاص بالمهام للأعضاء"
+                "`/sendnof` — إرسال تذكير خاص بالمهام للأعضاء\n"
+                "`/prank` — مقلب واضح وموسوم من البوت"
             ),
             inline=False
         )
@@ -1679,6 +1680,48 @@ class CommandManager:
         )
 
 
+    @app_commands.describe(
+        member="العضو المستهدف",
+        message="نص المقلب",
+        mention="إضافة منشن للعضو عند الإرسال في روم عام",
+        channel="روم عام اختياري؛ إذا لم تحدده تصل الرسالة في الخاص",
+    )
+    async def prank(
+        self,
+        interaction: discord.Interaction,
+        member: discord.Member,
+        message: str,
+        mention: bool = False,
+        channel: discord.TextChannel | None = None,
+    ):
+        embed = discord.Embed(
+            title="🎭 Prank من Forge Tasks BOT",
+            description=(
+                f"{message}\n\n"
+                "هذه رسالة مقلب مرحة أرسلها البوت، وليست رسالة من العضو نفسه."
+            ),
+            color=discord.Color.orange(),
+        )
+        embed.set_footer(text="Prank • رسالة واضحة من البوت")
+        try:
+            if channel:
+                await channel.send(content=member.mention if mention else None, embed=embed)
+                destination = channel.mention
+            else:
+                await member.send(embed=embed)
+                destination = "الخاص"
+        except (discord.Forbidden, discord.HTTPException):
+            await interaction.response.send_message(
+                "تعذر إرسال المقلب؛ تحقق من صلاحيات الروم أو إعدادات الخاص.",
+                ephemeral=True,
+            )
+            return
+        await interaction.response.send_message(
+            f"تم إرسال المقلب إلى {member.mention} عبر {destination} ✅",
+            ephemeral=True,
+        )
+
+
 # ============================================================
 # REGISTER COMMANDS
 # ============================================================
@@ -1742,6 +1785,14 @@ def register_commands(
     )
     sendnof_command.add_check(administrator_only)
     bot.tree.add_command(sendnof_command)
+
+    prank_command = app_commands.Command(
+        name="prank",
+        description="إرسال مقلب واضح وموسوم من البوت",
+        callback=manager.prank,
+    )
+    prank_command.add_check(administrator_only)
+    bot.tree.add_command(prank_command)
 
     # --------------------------------------------------------
     # Exchange
