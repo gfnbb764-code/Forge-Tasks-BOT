@@ -1,5 +1,6 @@
 import logging
 import uuid
+import asyncio
 
 import discord
 from discord import app_commands
@@ -1587,7 +1588,8 @@ class CommandManager:
                 "`/setup currency` — العملة\n"
                 "`/setup periods` — فترات المهام\n"
                 "`/setup list-tasks` — كل المهام الافتراضية والمخصصة\n"
-                "`/setup status` — حالة الإعدادات"
+                "`/setup status` — حالة الإعدادات\n"
+                "`/sendnof` — إرسال تذكير خاص بالمهام للأعضاء"
             ),
             inline=False
         )
@@ -1599,6 +1601,45 @@ class CommandManager:
         await interaction.response.send_message(
             embed=embed,
             ephemeral=True
+        )
+
+
+    async def sendnof(self, interaction: discord.Interaction):
+        """Send a localized task-expiry reminder to every human member."""
+        await interaction.response.defer(ephemeral=True)
+        guild = get_guild(interaction.guild.id)
+        english = guild["language"] == "en"
+        sent = 0
+        failed = 0
+
+        for member in interaction.guild.members:
+            if member.bot:
+                continue
+            embed = tasks_embed(
+                interaction.guild.id,
+                member.id,
+                guild["currency_name"],
+                guild["currency_symbol"],
+                language=guild["language"],
+            )
+            embed.title = "⏰ Task reminder" if english else "⏰ تذكير بالمهام"
+            embed.description = (
+                "You have active tasks. Complete them before this period ends, or they will be reset."
+                if english else
+                "لديك مهام نشطة. أكملها قبل انتهاء الفترة، وإلا ستنتهي وتُعاد تهيئتها من البداية."
+            )
+            try:
+                await member.send(embed=embed)
+                sent += 1
+            except (discord.Forbidden, discord.HTTPException):
+                failed += 1
+            await asyncio.sleep(0.15)
+
+        await interaction.followup.send(
+            f"Reminder sent: **{sent}**, unavailable DMs: **{failed}**."
+            if english else
+            f"تم إرسال التذكير إلى **{sent}** عضو، وتعذر الإرسال إلى **{failed}** عضو.",
+            ephemeral=True,
         )
 
 
@@ -1657,6 +1698,14 @@ def register_commands(
             callback=manager.help
         )
     )
+
+    sendnof_command = app_commands.Command(
+        name="sendnof",
+        description="إرسال تذكير خاص بالمهام لجميع الأعضاء",
+        callback=manager.sendnof,
+    )
+    sendnof_command.add_check(app_commands.checks.has_permissions(administrator=True))
+    bot.tree.add_command(sendnof_command)
 
     # --------------------------------------------------------
     # Exchange
