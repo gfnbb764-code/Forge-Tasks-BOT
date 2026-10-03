@@ -20,6 +20,7 @@ from database import (
     get_custom_task_by_name,
     get_custom_tasks,
     delete_custom_task,
+    upsert_custom_task,
 )
 
 from tasks import get_all_tasks, register_custom_task, unregister_custom_task, TASK_GROUPS
@@ -157,14 +158,29 @@ async def custom_task_autocomplete(interaction: discord.Interaction, current: st
         return []
     current = current.casefold()
     rows = get_custom_tasks(interaction.guild.id)
-    return [
+    choices = [
         app_commands.Choice(
             name=f"{row['name']} ({row['period']})"[:100],
             value=row["name"],
         )
         for row in rows
-        if not current or current in row["name"].casefold()
-    ][:25]
+        if row["task_type"] != "disabled" and (not current or current in row["name"].casefold())
+    ]
+    for period, tasks in TASK_GROUPS.items():
+        for key, task in tasks.items():
+            if key.startswith("custom_") or task["name"] in {choice.value for choice in choices}:
+                continue
+            if not current or current in task["name"].casefold():
+                choices.append(app_commands.Choice(name=f"{task['name']} ({period})"[:100], value=task["name"]))
+    return choices[:25]
+
+
+def builtin_task_by_name(name):
+    for period, tasks in TASK_GROUPS.items():
+        for key, task in tasks.items():
+            if not key.startswith("custom_") and task["name"] == name:
+                return key, period, task
+    return None
 
 
 # ============================================================
@@ -1118,13 +1134,23 @@ class SetupGroup(
                         reward: int | None = None, role_id: str | None = None,
                         channel: discord.TextChannel | None = None, url: str | None = None):
         current = get_custom_task_by_name(interaction.guild.id, task_name)
-        if not current:
+        builtin = None if current else builtin_task_by_name(task_name)
+        if not current and not builtin:
             await interaction.response.send_message("لم أجد مهمة بهذا الاسم.", ephemeral=True)
             return
-        row = update_custom_task(interaction.guild.id, current["task_key"], name=new_name, description=description,
-                                 target=target, reward=reward,
-                                 role_id=int(role_id) if role_id else None,
-                                 channel_id=channel.id if channel else None, url=url)
+        if current:
+            row = update_custom_task(interaction.guild.id, current["task_key"], name=new_name, description=description,
+                                     target=target, reward=reward,
+                                     role_id=int(role_id) if role_id else None,
+                                     channel_id=channel.id if channel else None, url=url)
+        else:
+            key, period, task = builtin
+            row = upsert_custom_task(interaction.guild.id, key, period, new_name or task["name"],
+                                     description or task["description"], task["type"],
+                                     target if target is not None else task["target"],
+                                     reward if reward is not None else task["reward"],
+                                     int(role_id) if role_id else task.get("role_id"),
+                                     channel.id if channel else task.get("channel_id"), url or task.get("url"))
         if not row:
             await interaction.response.send_message("تعذر تعديل المهمة.", ephemeral=True)
             return
@@ -1138,12 +1164,19 @@ class SetupGroup(
     @app_commands.autocomplete(task_name=custom_task_autocomplete)
     async def delete_task(self, interaction, task_name: str):
         current = get_custom_task_by_name(interaction.guild.id, task_name)
-        if not current:
+        builtin = None if current else builtin_task_by_name(task_name)
+        if not current and not builtin:
             await interaction.response.send_message("لم أجد مهمة بهذا الاسم.", ephemeral=True)
             return
-        deleted = delete_custom_task(interaction.guild.id, current["task_key"])
-        if deleted:
-            unregister_custom_task(current["task_key"], current["period"])
+        if current:
+            deleted = delete_custom_task(interaction.guild.id, current["task_key"])
+            if deleted:
+                unregister_custom_task(current["task_key"], current["period"])
+        else:
+            key, period, task = builtin
+            upsert_custom_task(interaction.guild.id, key, period, task["name"], task["description"],
+                               "disabled", task["target"], task["reward"], enabled=1)
+            unregister_custom_task(key, period)
         await interaction.response.send_message(
             embed=success_embed("تم حذف المهمة", f"تم حذف **{task_name}** نهائيًا من قائمة المهام."),
             ephemeral=True,
@@ -1166,7 +1199,7 @@ class SetupGroup(
                     continue
                 lines.append(f"• **{task['name']}** — `{task['target']}` — 💰 {task['reward']}")
             for key, row in custom_rows.items():
-                if row["period"] == period:
+                if row["period"] == period and row["task_type"] != "disabled":
                     lines.append(f"• 🛠️ **{row['name']}** — `{row['target']}` — 💰 {row['reward']}")
             embed.add_field(name=title, value="\n".join(lines) or "لا توجد مهام.", inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)

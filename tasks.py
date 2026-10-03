@@ -204,6 +204,11 @@ def _custom_task_dict(row):
 
 def register_custom_task(row):
     period = row["period"]
+    if row["task_type"] == "disabled":
+        TASK_GROUPS.get(period, {}).pop(row["task_key"], None)
+        if row["task_key"] in TASK_ORDER.get(period, []):
+            TASK_ORDER[period].remove(row["task_key"])
+        return
     TASK_GROUPS.setdefault(period, {})[row["task_key"]] = _custom_task_dict(row)
     TASK_ORDER.setdefault(period, [])
     if row["task_key"] not in TASK_ORDER[period]:

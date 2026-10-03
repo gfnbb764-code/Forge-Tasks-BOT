@@ -3637,6 +3637,27 @@ def get_custom_tasks(guild_id=None, period=None):
     return cursor.fetchall()
 
 
+def upsert_custom_task(guild_id, task_key, period, name, description, task_type,
+                       target, reward, role_id=None, channel_id=None, url=None,
+                       enabled=1):
+    cursor.execute(
+        """INSERT INTO custom_tasks
+        (guild_id, task_key, period, name, description, task_type, target, reward,
+         role_id, channel_id, url, enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(guild_id, task_key) DO UPDATE SET
+        period=excluded.period, name=excluded.name, description=excluded.description,
+        task_type=excluded.task_type, target=excluded.target, reward=excluded.reward,
+        role_id=excluded.role_id, channel_id=excluded.channel_id, url=excluded.url,
+        enabled=excluded.enabled, updated_at=excluded.updated_at""",
+        (guild_id, task_key, period, name, description, task_type, int(target), int(reward),
+         role_id, channel_id, url, int(enabled), now(), now()),
+    )
+    connection.commit()
+    cursor.execute("SELECT * FROM custom_tasks WHERE guild_id = ? AND task_key = ?", (guild_id, task_key))
+    return cursor.fetchone()
+
+
 def update_custom_task(guild_id, task_key, **changes):
     allowed = {"name", "description", "period", "task_type", "target", "reward",
                "role_id", "channel_id", "url", "enabled"}
