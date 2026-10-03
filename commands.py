@@ -176,6 +176,14 @@ async def custom_task_autocomplete(interaction: discord.Interaction, current: st
     return choices[:25]
 
 
+async def administrator_only(interaction: discord.Interaction) -> bool:
+    return bool(
+        interaction.guild
+        and interaction.user
+        and interaction.user.guild_permissions.administrator
+    )
+
+
 def builtin_task_by_name(name):
     for period, tasks in TASK_GROUPS.items():
         for key, task in tasks.items():
@@ -1704,7 +1712,7 @@ def register_commands(
         description="إرسال تذكير خاص بالمهام لجميع الأعضاء",
         callback=manager.sendnof,
     )
-    sendnof_command.add_check(app_commands.checks.has_permissions(administrator=True))
+    sendnof_command.add_check(administrator_only)
     bot.tree.add_command(sendnof_command)
 
     # --------------------------------------------------------
