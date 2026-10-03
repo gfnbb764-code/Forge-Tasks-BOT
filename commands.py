@@ -1,4 +1,5 @@
 import logging
+import uuid
 
 import discord
 from discord import app_commands
@@ -16,6 +17,7 @@ from database import (
     required_xp,
     create_custom_task,
     update_custom_task,
+    get_custom_task_by_name,
 )
 
 from tasks import get_all_tasks, register_custom_task
@@ -1031,12 +1033,11 @@ class SetupGroup(
 
     @app_commands.command(name="create-task", description="إنشاء مهمة مخصصة كاملة للأدمن")
     @app_commands.describe(
-        key="معرّف إنجليزي فريد للمهمة",
         period="الفترة: daily أو weekly أو monthly",
         name="اسم المهمة",
         description="شرح المهمة",
         task_type="نوع التحقق",
-        target="الهدف المطلوب",
+        target="الهدف المطلوب (للفويس: عدد الثواني)",
         reward="المكافأة بالعملات",
         role_id="رقم الرتبة المطلوبة عند الحاجة",
         channel="الروم المطلوب عند الحاجة",
@@ -1047,6 +1048,7 @@ class SetupGroup(
         task_type=[
             app_commands.Choice(name="رسائل", value="messages"),
             app_commands.Choice(name="صوت / AFK", value="afk"),
+            app_commands.Choice(name="صوت / مدة فعلية", value="voice"),
             app_commands.Choice(name="دعوات", value="invites"),
             app_commands.Choice(name="أوامر", value="commands"),
             app_commands.Choice(name="تفاعل / منشن / Reply", value="interactions"),
@@ -1057,13 +1059,14 @@ class SetupGroup(
         ]
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def create_task(self, interaction, key: str, period: app_commands.Choice[str], name: str,
+    async def create_task(self, interaction, period: app_commands.Choice[str], name: str,
                           description: str, task_type: app_commands.Choice[str], target: int,
                           reward: int, role_id: str | None = None,
                           channel: discord.TextChannel | None = None, url: str | None = None):
-        if target <= 0 or reward < 0 or len(key) > 40:
+        if target <= 0 or reward < 0:
             await interaction.response.send_message("الهدف والبيانات غير صالحة.", ephemeral=True)
             return
+        key = f"custom_{uuid.uuid4().hex[:12]}"
         try:
             row = create_custom_task(interaction.guild.id, key, period.value, name, description,
                                      task_type.value, target, reward,
@@ -1071,7 +1074,7 @@ class SetupGroup(
                                      channel.id if channel else None, url)
             register_custom_task(row)
         except Exception:
-            await interaction.response.send_message("تعذر إنشاء المهمة. تأكد أن المعرّف غير مستخدم.", ephemeral=True)
+            await interaction.response.send_message("تعذر إنشاء المهمة. تحقق من البيانات وحاول مرة أخرى.", ephemeral=True)
             return
         await interaction.response.send_message(
             embed=success_embed("تم إنشاء المهمة", f"**{name}**\nالنوع: `{task_type.value}`\nالهدف: `{target}`\nالمكافأة: **{reward}**"),
@@ -1081,29 +1084,33 @@ class SetupGroup(
 
     @app_commands.command(name="edit-task", description="تعديل مهمة مخصصة موجودة")
     @app_commands.describe(
-        key="معرّف المهمة",
-        name="اسم جديد",
+        task_name="اسم المهمة الحالية",
+        new_name="اسم جديد (اختياري)",
         description="وصف جديد",
-        target="هدف جديد",
+        target="هدف جديد (للفويس: عدد الثواني)",
         reward="مكافأة جديدة",
         role_id="رقم الرتبة",
         channel="الروم",
         url="الرابط",
     )
     @app_commands.checks.has_permissions(administrator=True)
-    async def edit_task(self, interaction, key: str, name: str | None = None,
+    async def edit_task(self, interaction, task_name: str, new_name: str | None = None,
                         description: str | None = None, target: int | None = None,
                         reward: int | None = None, role_id: str | None = None,
                         channel: discord.TextChannel | None = None, url: str | None = None):
-        row = update_custom_task(interaction.guild.id, key, name=name, description=description,
+        current = get_custom_task_by_name(interaction.guild.id, task_name)
+        if not current:
+            await interaction.response.send_message("لم أجد مهمة بهذا الاسم.", ephemeral=True)
+            return
+        row = update_custom_task(interaction.guild.id, current["task_key"], name=new_name, description=description,
                                  target=target, reward=reward,
                                  role_id=int(role_id) if role_id else None,
                                  channel_id=channel.id if channel else None, url=url)
         if not row:
-            await interaction.response.send_message("لم أجد مهمة بهذا المعرّف.", ephemeral=True)
+            await interaction.response.send_message("تعذر تعديل المهمة.", ephemeral=True)
             return
         register_custom_task(row)
-        await interaction.response.send_message(embed=success_embed("تم تعديل المهمة", f"تم تحديث **{key}**."), ephemeral=True)
+        await interaction.response.send_message(embed=success_embed("تم تعديل المهمة", f"تم تحديث **{task_name}**."), ephemeral=True)
 
 
     # ========================================================

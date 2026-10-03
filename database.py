@@ -3617,6 +3617,12 @@ def get_custom_task(guild_id, task_key):
     return cursor.fetchone()
 
 
+def get_custom_task_by_name(guild_id, name):
+    cursor.execute("SELECT * FROM custom_tasks WHERE guild_id = ? AND name = ? AND enabled = 1 LIMIT 1",
+                   (guild_id, name))
+    return cursor.fetchone()
+
+
 def get_custom_tasks(guild_id=None, period=None):
     query = "SELECT * FROM custom_tasks WHERE enabled = 1"
     args = []

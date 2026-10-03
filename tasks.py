@@ -734,7 +734,7 @@ def calculate_task_progress(
     # VOICE / AFK
     # ----------------------------------------
 
-    if task_type == "afk":
+    if task_type in ("afk", "voice"):
 
         return get_period_stat_value(
             guild_id,
@@ -1354,7 +1354,7 @@ def process_voice_tasks(
             continue
 
 
-        if task["type"] != "afk":
+        if task["type"] not in ("afk", "voice"):
 
             continue
 
