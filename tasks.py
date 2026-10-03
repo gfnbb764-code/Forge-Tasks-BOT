@@ -210,6 +210,12 @@ def register_custom_task(row):
         TASK_ORDER[period].append(row["task_key"])
 
 
+def unregister_custom_task(task_key, period):
+    TASK_GROUPS.get(period, {}).pop(task_key, None)
+    if task_key in TASK_ORDER.get(period, []):
+        TASK_ORDER[period].remove(task_key)
+
+
 for _custom_row in get_custom_tasks():
     register_custom_task(_custom_row)
 

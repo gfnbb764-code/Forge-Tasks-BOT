@@ -3653,6 +3653,13 @@ def update_custom_task(guild_id, task_key, **changes):
     return get_custom_task(guild_id, task_key)
 
 
+def delete_custom_task(guild_id, task_key):
+    cursor.execute("UPDATE custom_tasks SET enabled = 0, updated_at = ? WHERE guild_id = ? AND task_key = ?",
+                   (now(), guild_id, task_key))
+    connection.commit()
+    return cursor.rowcount > 0
+
+
 # ============================================================
 # CURRENCY SETTINGS
 # ============================================================

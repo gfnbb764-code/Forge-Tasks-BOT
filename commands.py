@@ -18,9 +18,11 @@ from database import (
     create_custom_task,
     update_custom_task,
     get_custom_task_by_name,
+    get_custom_tasks,
+    delete_custom_task,
 )
 
-from tasks import get_all_tasks, register_custom_task
+from tasks import get_all_tasks, register_custom_task, unregister_custom_task
 
 from embeds import (
     tasks_embed,
@@ -139,6 +141,7 @@ class TasksDashboardView(discord.ui.View):
             guild["currency_symbol"],
             language=guild["language"],
         )
+
         await interaction.response.edit_message(embed=embed, view=self)
 
     @discord.ui.button(label="شرح النظام", emoji="📖", style=discord.ButtonStyle.secondary)
@@ -147,6 +150,21 @@ class TasksDashboardView(discord.ui.View):
             "كل فترة تعمل بالتسلسل: أكمل المهمة الحالية لفتح التالية، وستصلك مكافأة وإشعار خاص عند الإكمال.",
             ephemeral=True,
         )
+
+
+async def custom_task_autocomplete(interaction: discord.Interaction, current: str):
+    if not interaction.guild:
+        return []
+    current = current.casefold()
+    rows = get_custom_tasks(interaction.guild.id)
+    return [
+        app_commands.Choice(
+            name=f"{row['name']} ({row['period']})"[:100],
+            value=row["name"],
+        )
+        for row in rows
+        if not current or current in row["name"].casefold()
+    ][:25]
 
 
 # ============================================================
@@ -1094,6 +1112,7 @@ class SetupGroup(
         url="الرابط",
     )
     @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.autocomplete(task_name=custom_task_autocomplete)
     async def edit_task(self, interaction, task_name: str, new_name: str | None = None,
                         description: str | None = None, target: int | None = None,
                         reward: int | None = None, role_id: str | None = None,
@@ -1111,6 +1130,24 @@ class SetupGroup(
             return
         register_custom_task(row)
         await interaction.response.send_message(embed=success_embed("تم تعديل المهمة", f"تم تحديث **{task_name}**."), ephemeral=True)
+
+
+    @app_commands.command(name="delete-task", description="حذف مهمة مخصصة من السيرفر")
+    @app_commands.describe(task_name="اختر المهمة التي تريد حذفها من القائمة")
+    @app_commands.checks.has_permissions(administrator=True)
+    @app_commands.autocomplete(task_name=custom_task_autocomplete)
+    async def delete_task(self, interaction, task_name: str):
+        current = get_custom_task_by_name(interaction.guild.id, task_name)
+        if not current:
+            await interaction.response.send_message("لم أجد مهمة بهذا الاسم.", ephemeral=True)
+            return
+        deleted = delete_custom_task(interaction.guild.id, current["task_key"])
+        if deleted:
+            unregister_custom_task(current["task_key"], current["period"])
+        await interaction.response.send_message(
+            embed=success_embed("تم حذف المهمة", f"تم حذف **{task_name}** نهائيًا من قائمة المهام."),
+            ephemeral=True,
+        )
 
 
     # ========================================================
