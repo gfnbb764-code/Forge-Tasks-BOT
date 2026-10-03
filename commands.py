@@ -115,6 +115,36 @@ def get_log_channel(
     return None
 
 
+class TasksDashboardView(discord.ui.View):
+
+    def __init__(self, guild_id, user_id):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.user_id = user_id
+
+    @discord.ui.button(label="تحديث التقدم", emoji="🔄", style=discord.ButtonStyle.primary)
+    async def refresh(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("هذه اللوحة ليست لك.", ephemeral=True)
+            return
+        guild = get_guild(self.guild_id)
+        embed = tasks_embed(
+            self.guild_id,
+            self.user_id,
+            guild["currency_name"],
+            guild["currency_symbol"],
+            language=guild["language"],
+        )
+        await interaction.response.edit_message(embed=embed, view=self)
+
+    @discord.ui.button(label="شرح النظام", emoji="📖", style=discord.ButtonStyle.secondary)
+    async def explain(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "كل فترة تعمل بالتسلسل: أكمل المهمة الحالية لفتح التالية، وستصلك مكافأة وإشعار خاص عند الإكمال.",
+            ephemeral=True,
+        )
+
+
 # ============================================================
 # SETUP PANEL
 # ============================================================
@@ -223,10 +253,7 @@ class SetupPanelView(
             )
 
         current = setting_bool(
-            guild.get(
-                "xp_enabled",
-                True
-            )
+            guild["xp_enabled"]
         )
 
         new_value = not current
@@ -285,10 +312,7 @@ class SetupPanelView(
             )
 
         current = setting_bool(
-            guild.get(
-                "reminders_enabled",
-                True
-            )
+            guild["reminders_enabled"]
         )
 
         new_value = not current
@@ -347,10 +371,7 @@ class SetupPanelView(
             )
 
         current = setting_bool(
-            guild.get(
-                "level_up_enabled",
-                True
-            )
+            guild["level_up_enabled"]
         )
 
         new_value = not current
@@ -409,10 +430,7 @@ class SetupPanelView(
             )
 
         current = setting_bool(
-            guild.get(
-                "level_up_mention",
-                True
-            )
+            guild["level_up_mention"]
         )
 
         new_value = not current
@@ -1105,7 +1123,8 @@ class CommandManager:
         )
 
         await interaction.response.send_message(
-            embed=embed
+            embed=embed,
+            view=TasksDashboardView(guild_id, user_id)
         )
 
 

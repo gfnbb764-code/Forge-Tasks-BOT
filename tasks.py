@@ -962,6 +962,11 @@ def update_task(
         period
     )
 
+    next_task = get_task(next_task_id, period) if next_task_id else None
+    next_task_number = None
+    if next_task_id:
+        next_task_number = get_current_task_index(guild_id, user_id, period) + 1
+
 
     return {
 
@@ -984,6 +989,12 @@ def update_task(
         "percentage": percentage,
 
         "next_task_id": next_task_id,
+
+        "next_task": next_task,
+
+        "next_task_number": next_task_number,
+
+        "total_tasks": len(get_task_order(period)),
 
         "all_completed": (
             next_task_id is None

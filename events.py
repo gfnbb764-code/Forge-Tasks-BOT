@@ -27,10 +27,12 @@ from tasks import (
     process_voice_tasks,
     process_level_tasks,
     process_nickname_task,
+    get_active_task_display,
 )
 
 from embeds import (
     task_completed_embed,
+    active_task_embed,
     level_up_embed,
 )
 
@@ -137,10 +139,15 @@ class EventManager:
         # CREATE USER
         # ----------------------------------------------------
 
-        get_user(
+        user = get_user(
             guild_id,
             user_id
         )
+
+        guild = get_guild(guild_id)
+
+        if user and int(user["messages"] or 0) == 0 and guild:
+            await self.send_daily_task_dm(message.author, guild)
 
         # ----------------------------------------------------
         # MESSAGE COUNT
@@ -826,9 +833,6 @@ class EventManager:
         results
     ):
 
-        if not channel:
-            return
-
         if not results:
             return
 
@@ -882,23 +886,61 @@ class EventManager:
 
                 next_task_number=next_task_number,
 
-                total_tasks=total_tasks
+                total_tasks=total_tasks,
+
+                language=guild["language"]
 
             )
 
             try:
 
-                await channel.send(
+                await member.send(embed=embed)
 
-                    content=member.mention,
+            except (discord.HTTPException, discord.Forbidden):
 
-                    embed=embed
+                if channel:
+                    try:
+                        await channel.send(content=member.mention, embed=embed)
+                    except discord.HTTPException:
+                        pass
 
-                )
 
-            except discord.HTTPException:
+    async def send_daily_task_dm(
+        self,
+        member,
+        guild
+    ):
 
-                pass
+        """Send the first daily task privately once when a member starts."""
+
+        display = get_active_task_display(
+            guild["guild_id"],
+            member.id,
+            "daily"
+        )
+
+        if not display.get("available"):
+            return
+
+        embed = active_task_embed(
+            guild["guild_id"],
+            member.id,
+            "daily",
+            guild["currency_name"],
+            guild["currency_symbol"]
+        )
+
+        embed.title = "🚀 مهمتك اليومية الأولى"
+        embed.description = (
+            "أهلًا بك في Forge Tasks!\n\n"
+            "هذه أول مهمة يومية لك. نفّذها ليتم فتح المهمة التالية تلقائيًا.\n"
+            "سأرسل لك إشعارًا خاصًا عند الإكمال مع تفاصيل المهمة القادمة."
+        )
+
+        try:
+            await member.send(embed=embed)
+        except (discord.HTTPException, discord.Forbidden):
+            pass
 
 
     # ========================================================
@@ -920,10 +962,7 @@ class EventManager:
         if not guild:
             return
 
-        if not guild.get(
-            "level_up_enabled",
-            True
-        ):
+        if not guild["level_up_enabled"]:
 
             return
 
@@ -935,14 +974,9 @@ class EventManager:
 
             new_level,
 
-            mention=guild.get(
-                "level_up_mention",
-                True
-            ),
+            mention=guild["level_up_mention"],
 
-            message=guild.get(
-                "level_up_message"
-            )
+            message=guild["level_up_message"]
 
         )
 
@@ -950,10 +984,7 @@ class EventManager:
 
             content = None
 
-            if guild.get(
-                "level_up_mention",
-                True
-            ):
+            if guild["level_up_mention"]:
 
                 content = member.mention
 

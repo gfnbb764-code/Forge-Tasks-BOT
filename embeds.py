@@ -159,7 +159,6 @@ def tasks_embed(
 ):
 
     english = language == "en"
-
     embed = create_embed(
 
         "📋 Your Tasks" if english else "📋 مهامك",
@@ -572,7 +571,6 @@ def profile_embed(
 ):
 
     english = language == "en"
-
     embed = create_embed(
 
         f"👤 {member.display_name}",
@@ -922,18 +920,20 @@ def task_completed_embed(
     currency_symbol,
     next_task=None,
     next_task_number=None,
-    total_tasks=None
+    total_tasks=None,
+    language="ar"
 ):
+
+    english = language == "en"
+    prefix = "Great work! You completed:\n\n" if english else "أحسنت! أكملت مهمة:\n\n"
 
     embed = create_embed(
 
-        "🎉 تم إنجاز المهمة!",
+        "🎉 Task completed!" if english else "🎉 تم إنجاز المهمة!",
 
         (
-
-            f"أحسنت! أكملت مهمة:\n\n"
-
-            f"**{task['name']}**\n\n"
+            prefix
+            + f"**{task['name']}**\n\n"
 
             f"🎁 المكافأة: "
             f"**{task['reward']} "
@@ -977,7 +977,7 @@ def task_completed_embed(
 
         embed.add_field(
 
-            name="🔓 المهمة التالية",
+            name="🔓 Next task" if english else "🔓 المهمة التالية",
 
             value=(
 
@@ -1000,10 +1000,11 @@ def task_completed_embed(
 
         embed.add_field(
 
-            name="🚀 ابدأ الآن",
+            name="🚀 Start now" if english else "🚀 ابدأ الآن",
 
             value=(
-                "استخدم `/tasks` لعرض تقدم المهمة الجديدة."
+                "Use `/tasks` to view your new task progress."
+                if english else "استخدم `/tasks` لعرض تقدم المهمة الجديدة."
             ),
 
             inline=False
@@ -1014,7 +1015,7 @@ def task_completed_embed(
 
         embed.add_field(
 
-            name="🏆 اكتملت الفترة",
+            name="🏆 Period completed" if english else "🏆 اكتملت الفترة",
 
             value=(
 

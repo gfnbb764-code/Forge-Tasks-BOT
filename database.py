@@ -710,6 +710,18 @@ def initialize_database(
     )
 
     add_column_if_missing(
+        "currencies",
+        "enabled",
+        "INTEGER DEFAULT 1"
+    )
+
+    add_column_if_missing(
+        "currencies",
+        "created_at",
+        "TEXT"
+    )
+
+    add_column_if_missing(
         "users",
         "last_voice",
         "TEXT"
