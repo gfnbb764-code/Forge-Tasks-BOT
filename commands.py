@@ -1612,8 +1612,25 @@ class CommandManager:
         )
 
 
-    async def sendnof(self, interaction: discord.Interaction):
+    @app_commands.describe(
+        message="رسالة مخصصة اختيارية، ويمكن استخدام {user} و {guild}",
+        include_embed="تشغيل أو إيقاف Embed التذكير الافتراضي",
+        include_message="تشغيل أو إيقاف الرسالة النصية الافتراضية",
+    )
+    async def sendnof(
+        self,
+        interaction: discord.Interaction,
+        message: str | None = None,
+        include_embed: bool = True,
+        include_message: bool = True,
+    ):
         """Send a localized task-expiry reminder to every human member."""
+        if not include_embed and not include_message and not message:
+            await interaction.response.send_message(
+                "فعّل الـ Embed أو الرسالة النصية، أو اكتب رسالة مخصصة.",
+                ephemeral=True,
+            )
+            return
         await interaction.response.defer(ephemeral=True)
         guild = get_guild(interaction.guild.id)
         english = guild["language"] == "en"
@@ -1623,21 +1640,32 @@ class CommandManager:
         for member in interaction.guild.members:
             if member.bot:
                 continue
-            embed = tasks_embed(
-                interaction.guild.id,
-                member.id,
-                guild["currency_name"],
-                guild["currency_symbol"],
-                language=guild["language"],
-            )
-            embed.title = "⏰ Task reminder" if english else "⏰ تذكير بالمهام"
-            embed.description = (
-                "You have active tasks. Complete them before this period ends, or they will be reset."
-                if english else
-                "لديك مهام نشطة. أكملها قبل انتهاء الفترة، وإلا ستنتهي وتُعاد تهيئتها من البداية."
-            )
+            embed = None
+            if include_embed:
+                embed = tasks_embed(
+                    interaction.guild.id,
+                    member.id,
+                    guild["currency_name"],
+                    guild["currency_symbol"],
+                    language=guild["language"],
+                )
+                embed.title = "⏰ Task reminder" if english else "⏰ تذكير بالمهام"
+                embed.description = (
+                    "You have active tasks. Complete them before this period ends, or they will be reset."
+                    if english else
+                    "لديك مهام نشطة. أكملها قبل انتهاء الفترة، وإلا ستنتهي وتُعاد تهيئتها من البداية."
+                )
+            content = None
+            if message:
+                content = message.replace("{user}", member.display_name).replace("{guild}", interaction.guild.name)
+            elif include_message:
+                content = (
+                    "You have active tasks. Complete them before this period ends, or they will be reset."
+                    if english else
+                    "لديك مهام. أكملها قبل انتهاء الفترة، وإلا ستنتهي وتُعاد تهيئتها."
+                )
             try:
-                await member.send(embed=embed)
+                await member.send(content=content, embed=embed)
                 sent += 1
             except (discord.Forbidden, discord.HTTPException):
                 failed += 1
