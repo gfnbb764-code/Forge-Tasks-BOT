@@ -629,6 +629,17 @@ def initialize_database(
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS role_shop (
+            guild_id INTEGER NOT NULL,
+            role_id INTEGER NOT NULL,
+            price INTEGER NOT NULL DEFAULT 0,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT,
+            PRIMARY KEY (guild_id, role_id)
+        )
+    """)
+
 
     # ========================================================
     # DATABASE MIGRATIONS
@@ -746,6 +757,7 @@ def initialize_database(
     add_column_if_missing("users", "interaction_count", "INTEGER DEFAULT 0")
     add_column_if_missing("users", "unique_invites", "INTEGER DEFAULT 0")
     add_column_if_missing("users", "youtube_seconds", "INTEGER DEFAULT 0")
+    add_column_if_missing("users", "games_won", "INTEGER DEFAULT 0")
     add_column_if_missing("guilds", "period_key_daily", "TEXT")
     add_column_if_missing("guilds", "period_key_weekly", "TEXT")
     add_column_if_missing("guilds", "period_key_monthly", "TEXT")
@@ -1279,6 +1291,51 @@ def transfer_coins(guild_id, sender_id, receiver_id, amount):
                    (amount, guild_id, receiver_id))
     connection.commit()
     return True, "ok"
+
+
+def add_game_win(guild_id, user_id, amount=1):
+    create_user(guild_id, user_id)
+    cursor.execute("UPDATE users SET games_won = COALESCE(games_won, 0) + ? WHERE guild_id = ? AND user_id = ?",
+                   (int(amount), guild_id, user_id))
+    connection.commit()
+
+
+def upsert_role_shop_item(guild_id, role_id, price, enabled=1):
+    cursor.execute("""INSERT INTO role_shop (guild_id, role_id, price, enabled, created_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(guild_id, role_id) DO UPDATE SET price=excluded.price, enabled=excluded.enabled""",
+        (guild_id, role_id, int(price), int(enabled), now()))
+    connection.commit()
+    return get_role_shop_item(guild_id, role_id)
+
+
+def get_role_shop_item(guild_id, role_id):
+    cursor.execute("SELECT * FROM role_shop WHERE guild_id = ? AND role_id = ? AND enabled = 1", (guild_id, role_id))
+    return cursor.fetchone()
+
+
+def get_role_shop_items(guild_id):
+    cursor.execute("SELECT * FROM role_shop WHERE guild_id = ? AND enabled = 1 ORDER BY price ASC", (guild_id,))
+    return cursor.fetchall()
+
+
+def remove_role_shop_item(guild_id, role_id):
+    cursor.execute("UPDATE role_shop SET enabled = 0 WHERE guild_id = ? AND role_id = ?", (guild_id, role_id))
+    connection.commit()
+    return cursor.rowcount > 0
+
+
+def purchase_role(guild_id, user_id, role_id):
+    item = get_role_shop_item(guild_id, role_id)
+    if not item:
+        return False, "not_found"
+    user = get_user(guild_id, user_id)
+    price = int(item["price"] or 0)
+    if int(user["coins"] or 0) < price:
+        return False, "insufficient"
+    cursor.execute("UPDATE users SET coins = coins - ? WHERE guild_id = ? AND user_id = ?", (price, guild_id, user_id))
+    connection.commit()
+    return True, price
 
 
 def get_guild_user_ids(guild_id):

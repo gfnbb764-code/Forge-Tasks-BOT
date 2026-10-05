@@ -1,6 +1,8 @@
 import logging
 import uuid
 import asyncio
+import random
+import os
 
 import discord
 from discord import app_commands
@@ -15,6 +17,11 @@ from database import (
     get_currency,
     exchange_coins,
     transfer_coins,
+    add_game_win,
+    add_coins,
+    get_role_shop_items,
+    upsert_role_shop_item,
+    purchase_role,
     update_guild_setting,
     required_xp,
     create_custom_task,
@@ -25,7 +32,7 @@ from database import (
     upsert_custom_task,
 )
 
-from tasks import get_all_tasks, register_custom_task, unregister_custom_task, TASK_GROUPS, get_active_task_display, advance_task_index
+from tasks import get_all_tasks, register_custom_task, unregister_custom_task, TASK_GROUPS, get_active_task_display, advance_task_index, process_game_tasks
 
 from embeds import (
     tasks_embed,
@@ -89,6 +96,90 @@ def get_task_channel(
 
     return None
 
+
+class GameView(discord.ui.View):
+    """Short interactive games; results update the user's real game-task progress."""
+    def __init__(self, guild_id, player_id, game, opponent_id=None):
+        super().__init__(timeout=90)
+        self.guild_id, self.player_id, self.game, self.opponent_id = guild_id, player_id, game, opponent_id
+        if game == "rps":
+            for label in ("rock", "paper", "scissors"):
+                button = discord.ui.Button(label=label.title(), style=discord.ButtonStyle.primary)
+                button.callback = self._rps_callback(label)
+                self.add_item(button)
+        elif game == "number":
+            for value in ("1", "2", "3", "4", "5"):
+                button = discord.ui.Button(label=value, style=discord.ButtonStyle.secondary)
+                button.callback = self._number_callback(int(value))
+                self.add_item(button)
+        else:
+            button = discord.ui.Button(label="ابدأ الجولة", style=discord.ButtonStyle.success)
+            button.callback = self._coin_callback
+            self.add_item(button)
+
+    def _rps_callback(self, choice):
+        async def callback(interaction):
+            if interaction.user.id != self.player_id:
+                return await interaction.response.send_message("هذه الجولة ليست لك.", ephemeral=True)
+            bot_choice = random.choice(("rock", "paper", "scissors"))
+            won = (choice, bot_choice) in (("rock", "scissors"), ("paper", "rock"), ("scissors", "paper"))
+            await self._finish(interaction, won, f"اختيارك: **{choice}** | اختيار الخصم: **{bot_choice}**")
+        return callback
+
+    def _number_callback(self, choice):
+        async def callback(interaction):
+            if interaction.user.id != self.player_id:
+                return await interaction.response.send_message("هذه الجولة ليست لك.", ephemeral=True)
+            target = random.randint(1, 5)
+            await self._finish(interaction, choice == target, f"اخترت **{choice}** والرقم المخفي كان **{target}**")
+        return callback
+
+    async def _coin_callback(self, interaction):
+        if interaction.user.id != self.player_id:
+            return await interaction.response.send_message("هذه الجولة ليست لك.", ephemeral=True)
+        await self._finish(interaction, random.choice((True, False)), "نتيجة الجولة ظهرت الآن.")
+
+    async def _finish(self, interaction, won, detail):
+        completed = False
+        if won:
+            add_game_win(self.guild_id, self.player_id)
+            completed = any(result and result.get("completed") for result in process_game_tasks(self.guild_id, self.player_id))
+        message = "فوز! تم احتساب الفوز لمهمتك."
+        if completed:
+            message += "\nتم إكمال المهمة وإضافة المكافأة وفتح المهمة التالية."
+        embed = discord.Embed(title="نتيجة اللعبة", description=f"{detail}\n\n" + (message if won else "لم تفز هذه المرة، جرّب جولة أخرى."), color=discord.Color.green() if won else discord.Color.red())
+        for child in self.children:
+            child.disabled = True
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+class RoleShopView(discord.ui.View):
+    def __init__(self, guild):
+        super().__init__(timeout=120)
+        self.guild_id = guild.id
+        for item in get_role_shop_items(guild.id)[:25]:
+            role = guild.get_role(int(item["role_id"]))
+            if not role:
+                continue
+            button = discord.ui.Button(label=f"{role.name} — {item['price']}", style=discord.ButtonStyle.primary)
+            button.callback = self._buy_callback(role.id)
+            self.add_item(button)
+
+    def _buy_callback(self, role_id):
+        async def callback(interaction):
+            role = interaction.guild.get_role(role_id)
+            if not role:
+                return await interaction.response.send_message("الرتبة لم تعد موجودة.", ephemeral=True)
+            ok, result = purchase_role(interaction.guild.id, interaction.user.id, role_id)
+            if not ok:
+                return await interaction.response.send_message("رصيدك غير كافٍ أو الرتبة غير متاحة.", ephemeral=True)
+            try:
+                await interaction.user.add_roles(role, reason="Role shop purchase")
+            except discord.HTTPException:
+                add_coins(interaction.guild.id, interaction.user.id, result)
+                return await interaction.response.send_message("تعذر إضافة الرتبة؛ تحقق من ترتيب رتب البوت.", ephemeral=True)
+            await interaction.response.send_message(f"تم شراء رتبة **{role.name}** مقابل {result} كوينز.", ephemeral=True)
+        return callback
 
 def get_log_channel(
     guild,
@@ -1134,6 +1225,7 @@ class SetupGroup(
             app_commands.Choice(name="Level", value="level"),
             app_commands.Choice(name="YouTube / رابط", value="youtube"),
             app_commands.Choice(name="Top 1", value="top"),
+            app_commands.Choice(name="لعبة / فوز", value="game"),
         ]
     )
     @app_commands.checks.has_permissions(administrator=True)
@@ -1343,11 +1435,12 @@ class CommandManager:
             guild["currency_symbol"],
             language=guild["language"],
         )
-
-        await interaction.response.send_message(
-            embed=embed,
-            view=TasksDashboardView(guild_id, user_id)
-        )
+        banner = os.path.join("assets", "banners", "tasks.png")
+        if os.path.exists(banner):
+            embed.set_image(url="attachment://tasks.png")
+            await interaction.response.send_message(embed=embed, file=discord.File(banner, filename="tasks.png"), view=TasksDashboardView(guild_id, user_id))
+        else:
+            await interaction.response.send_message(embed=embed, view=TasksDashboardView(guild_id, user_id))
 
 
     # ========================================================
@@ -1586,6 +1679,46 @@ class CommandManager:
         await interaction.response.send_message(
             embed=success_embed("تم تحويل الكوينز", f"تم تحويل **{amount}** كوينز إلى {member.mention} ✅")
         )
+
+    @app_commands.describe(game="اختر لعبة تفاعلية", opponent="عضو اختياري للتحدي")
+    @app_commands.choices(game=[
+        app_commands.Choice(name="حجر ورق مقص", value="rps"),
+        app_commands.Choice(name="خمن الرقم", value="number"),
+        app_commands.Choice(name="عملة الحظ", value="coin"),
+    ])
+    async def games(self, interaction: discord.Interaction, game: str, opponent: discord.Member | None = None):
+        if opponent and (opponent.bot or opponent.id == interaction.user.id):
+            opponent = None
+        title = {"rps": "حجر ورق مقص", "number": "خمن الرقم", "coin": "عملة الحظ"}[game]
+        description = "اختر حركة للفوز." if game == "rps" else ("اختر رقمًا من 1 إلى 5." if game == "number" else "اضغط لبدء جولة عشوائية.")
+        if opponent:
+            description += f"\nالتحدي موجّه إلى {opponent.mention}، ويمكنه المشاركة من نفس الرسالة."
+        embed = discord.Embed(title=f"🎮 {title}", description=description, color=discord.Color.blurple())
+        embed.set_thumbnail(url=interaction.user.display_avatar.url)
+        await interaction.response.send_message(embed=embed, view=GameView(interaction.guild.id, interaction.user.id, game, opponent.id if opponent else None))
+
+    @app_commands.describe(role="الرتبة التي ستظهر في المتجر", price="سعر الرتبة بالكوينز")
+    async def role_cash(self, interaction: discord.Interaction, role: discord.Role, price: int):
+        if price <= 0:
+            return await interaction.response.send_message("السعر يجب أن يكون أكبر من صفر.", ephemeral=True)
+        if role.is_default() or role.managed:
+            return await interaction.response.send_message("لا يمكن بيع هذه الرتبة.", ephemeral=True)
+        upsert_role_shop_item(interaction.guild.id, role.id, price)
+        await interaction.response.send_message(f"تمت إضافة {role.mention} إلى متجر الرتب بسعر **{price}** كوينز.", ephemeral=True)
+
+    async def role_shop(self, interaction: discord.Interaction):
+        items = get_role_shop_items(interaction.guild.id)
+        if not items:
+            return await interaction.response.send_message("متجر الرتب فارغ حاليًا.", ephemeral=True)
+        lines = []
+        for item in items:
+            role = interaction.guild.get_role(int(item["role_id"]))
+            if role:
+                lines.append(f"{role.mention} — **{item['price']}** كوينز")
+        embed = discord.Embed(title="متجر الرتب", description="\n".join(lines), color=discord.Color.gold())
+        if interaction.guild.icon:
+            embed.set_thumbnail(url=interaction.guild.icon.url)
+        await interaction.response.send_message(embed=embed, view=RoleShopView(interaction.guild))
 
 
     # ========================================================
@@ -1867,6 +2000,27 @@ def register_commands(
         callback=manager.transfer,
     )
     bot.tree.add_command(transfer_command)
+
+    games_command = app_commands.Command(
+        name="games",
+        description="ألعاب تفاعلية مع احتساب الفوز في المهام",
+        callback=manager.games,
+    )
+    bot.tree.add_command(games_command)
+
+    role_cash_command = app_commands.Command(
+        name="role-cash",
+        description="إضافة رتبة إلى متجر الكوينز",
+        callback=manager.role_cash,
+    )
+    role_cash_command.add_check(administrator_only)
+    bot.tree.add_command(role_cash_command)
+
+    bot.tree.add_command(app_commands.Command(
+        name="role-shop",
+        description="عرض متجر الرتب وشراء رتبة",
+        callback=manager.role_shop,
+    ))
 
     # --------------------------------------------------------
     # Setup

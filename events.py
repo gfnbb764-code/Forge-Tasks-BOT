@@ -5,10 +5,14 @@
 # ============================================================
 
 import asyncio
+import logging
+import os
 import time
 from datetime import datetime, timezone
 
 import discord
+
+logger = logging.getLogger("forge_tasks")
 
 from database import (
     get_user,
@@ -160,6 +164,7 @@ class EventManager:
                 }
 
             except discord.Forbidden:
+                logger.warning("Cannot read invites for guild %s; grant Manage Server to verify invite tasks.", guild.id)
 
                 invite_cache[
                     guild.id
@@ -794,6 +799,7 @@ class EventManager:
             )
 
         except discord.Forbidden:
+            logger.warning("Invite verification unavailable in guild %s: bot lacks Manage Server permission.", guild.id)
 
             return
 
@@ -832,6 +838,7 @@ class EventManager:
         }
 
         if not used_invite:
+            logger.info("Member %s joined guild %s but no invite usage delta was detected.", member.id, guild.id)
             return
 
         inviter = used_invite.inviter
@@ -975,7 +982,8 @@ class EventManager:
 
                 await member.send(embed=embed)
 
-            except (discord.HTTPException, discord.Forbidden):
+            except (discord.HTTPException, discord.Forbidden) as exc:
+                logger.warning("DM completion failed for member %s in guild %s: %s", member.id, member.guild.id, exc)
 
                 if channel:
                     try:
@@ -997,6 +1005,7 @@ class EventManager:
     async def send_available_task_dm(self, member, guild, period, first=False):
         display = get_active_task_display(guild["guild_id"], member.id, period)
         if not display.get("available"):
+            logger.debug("No available %s task for member %s in guild %s", period, member.id, guild["guild_id"])
             return
         embed = active_task_embed(guild["guild_id"], member.id, period,
                                   guild["currency_name"], guild["currency_symbol"])
@@ -1010,9 +1019,15 @@ class EventManager:
             "موعد إعادة تعيين الفترة يظهر داخل التفاصيل."
         )
         try:
-            await member.send(embed=embed, view=TaskAvailabilityView(guild["guild_id"], member.id, period))
-        except (discord.HTTPException, discord.Forbidden):
-            pass
+            banner_name = "daily.png" if period == "daily" else "tasks.png"
+            banner = os.path.join("assets", "banners", banner_name)
+            if os.path.exists(banner):
+                embed.set_image(url=f"attachment://{banner_name}")
+                await member.send(embed=embed, file=discord.File(banner, filename=banner_name), view=TaskAvailabilityView(guild["guild_id"], member.id, period))
+            else:
+                await member.send(embed=embed, view=TaskAvailabilityView(guild["guild_id"], member.id, period))
+        except (discord.HTTPException, discord.Forbidden) as exc:
+            logger.warning("Task DM failed for member %s in guild %s: %s", member.id, guild["guild_id"], exc)
 
 
     # ========================================================

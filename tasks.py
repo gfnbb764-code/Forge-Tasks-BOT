@@ -593,8 +593,7 @@ def progress_bar(
 ):
 
     if target <= 0:
-
-        return "🟦" * size
+        return "█" * size
 
 
     percentage = min(
@@ -614,10 +613,7 @@ def progress_bar(
     )
 
 
-    return (
-        "🟦" * filled +
-        "⬜" * empty
-    )
+    return "█" * filled + "░" * empty
 
 
 # ============================================================
@@ -737,6 +733,9 @@ def calculate_task_progress(
 
     if task_type == "top":
         return 1 if get_user_rank(guild_id, user_id) == 1 else 0
+
+    if task_type in ("game", "games"):
+        return get_period_stat_value(guild_id, user_id, period, "games_won")
 
     if task_type == "role":
         return 0
@@ -1573,6 +1572,16 @@ def process_top_tasks(guild_id, user_id):
     if task and task["type"] == "top":
         return [sync_active_task_progress(guild_id, user_id, "monthly")]
     return []
+
+
+def process_game_tasks(guild_id, user_id):
+    results = []
+    for period in ("daily", "weekly", "monthly"):
+        task_id = get_active_task_id(guild_id, user_id, period)
+        task = get_task(task_id, period) if task_id else None
+        if task and task["type"] in ("game", "games"):
+            results.append(sync_active_task_progress(guild_id, user_id, period))
+    return results
 
 
 def process_role_task(guild_id, user_id, member):
