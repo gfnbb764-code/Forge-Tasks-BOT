@@ -746,6 +746,9 @@ def initialize_database(
     add_column_if_missing("users", "interaction_count", "INTEGER DEFAULT 0")
     add_column_if_missing("users", "unique_invites", "INTEGER DEFAULT 0")
     add_column_if_missing("users", "youtube_seconds", "INTEGER DEFAULT 0")
+    add_column_if_missing("guilds", "period_key_daily", "TEXT")
+    add_column_if_missing("guilds", "period_key_weekly", "TEXT")
+    add_column_if_missing("guilds", "period_key_monthly", "TEXT")
 
     add_column_if_missing(
         "users",
@@ -1064,7 +1067,10 @@ def update_guild_setting(
 
         "level_up_message",
 
-        "reminder_minutes"
+        "reminder_minutes",
+        "period_key_daily",
+        "period_key_weekly",
+        "period_key_monthly"
 
     }
 
@@ -1258,6 +1264,26 @@ def add_coins(
 
 
     connection.commit()
+
+
+def transfer_coins(guild_id, sender_id, receiver_id, amount):
+    if amount <= 0 or sender_id == receiver_id:
+        return False, "invalid"
+    sender = get_user(guild_id, sender_id)
+    get_user(guild_id, receiver_id)
+    if not sender or int(sender["coins"] or 0) < amount:
+        return False, "insufficient"
+    cursor.execute("UPDATE users SET coins = coins - ? WHERE guild_id = ? AND user_id = ?",
+                   (amount, guild_id, sender_id))
+    cursor.execute("UPDATE users SET coins = coins + ? WHERE guild_id = ? AND user_id = ?",
+                   (amount, guild_id, receiver_id))
+    connection.commit()
+    return True, "ok"
+
+
+def get_guild_user_ids(guild_id):
+    cursor.execute("SELECT user_id FROM users WHERE guild_id = ?", (guild_id,))
+    return [row["user_id"] for row in cursor.fetchall()]
 
 
 def remove_coins(

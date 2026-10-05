@@ -6,6 +6,7 @@
 
 import asyncio
 import time
+from datetime import datetime, timezone
 
 import discord
 
@@ -20,6 +21,8 @@ from database import (
     add_xp,
     add_nickname_change,
     increment_user_stat,
+    get_guild_user_ids,
+    update_guild_setting,
 )
 
 from tasks import (
@@ -34,7 +37,10 @@ from tasks import (
     process_interaction_tasks,
     process_top_tasks,
     process_role_task,
+    reset_task_period,
 )
+
+from commands import TaskAvailabilityView
 
 from embeds import (
     task_completed_embed,
@@ -75,6 +81,7 @@ class EventManager:
 
         self.bot = bot
         self.voice_loop_task = None
+        self.period_reset_task = None
 
 
     # ========================================================
@@ -90,6 +97,41 @@ class EventManager:
         print(
             "[Events] Event manager started."
         )
+
+    async def period_reset_loop(self):
+        await self.bot.wait_until_ready()
+        while not self.bot.is_closed():
+            now = datetime.now(timezone.utc)
+            period_keys = {
+                "daily": now.strftime("%Y-%m-%d"),
+                "weekly": f"{now.isocalendar().year}-W{now.isocalendar().week:02d}",
+                "monthly": now.strftime("%Y-%m"),
+            }
+            for guild in self.bot.guilds:
+                settings = get_guild(guild.id)
+                for period, key in period_keys.items():
+                    field = f"period_key_{period}"
+                    previous = settings[field]
+                    if previous is None:
+                        update_guild_setting(guild.id, field, key)
+                        continue
+                    if previous == key:
+                        continue
+                    for user_id in get_guild_user_ids(guild.id):
+                        reset_task_period(guild.id, user_id, period)
+                        member = guild.get_member(user_id)
+                        if member and not member.bot:
+                            await self.send_available_task_dm(member, settings, period)
+                    update_guild_setting(guild.id, field, key)
+                    if guild.system_channel:
+                        text = (
+                            f"@everyone ⏰ تم إعادة تعيين الفترة **{period}** وفتح المهام من جديد."
+                        )
+                        try:
+                            await guild.system_channel.send(text, allowed_mentions=discord.AllowedMentions(everyone=True))
+                        except discord.HTTPException:
+                            pass
+            await asyncio.sleep(30)
 
 
     # ========================================================
@@ -950,32 +992,25 @@ class EventManager:
 
         """Send the first daily task privately once when a member starts."""
 
-        display = get_active_task_display(
-            guild["guild_id"],
-            member.id,
-            "daily"
-        )
+        await self.send_available_task_dm(member, guild, "daily", first=True)
 
+    async def send_available_task_dm(self, member, guild, period, first=False):
+        display = get_active_task_display(guild["guild_id"], member.id, period)
         if not display.get("available"):
             return
-
-        embed = active_task_embed(
-            guild["guild_id"],
-            member.id,
-            "daily",
-            guild["currency_name"],
-            guild["currency_symbol"]
-        )
-
-        embed.title = "🚀 مهمتك اليومية الأولى"
+        embed = active_task_embed(guild["guild_id"], member.id, period,
+                                  guild["currency_name"], guild["currency_symbol"])
+        english = guild["language"] == "en"
+        embed.title = ("🚀 Your first daily task" if english else "🚀 مهمتك اليومية الأولى") if first else ("📢 New task available" if english else "📢 مهمة جديدة متاحة")
         embed.description = (
-            "أهلًا بك في Forge Tasks!\n\n"
-            "هذه أول مهمة يومية لك. نفّذها ليتم فتح المهمة التالية تلقائيًا.\n"
-            "سأرسل لك إشعارًا خاصًا عند الإكمال مع تفاصيل المهمة القادمة."
+            "A new task is available. Press Start to begin, or Skip to move to the next one.\n"
+            "The period reset is shown below."
+            if english else
+            "مهمة جديدة متاحة لك. اضغط بدء للبدء أو تخطي للانتقال للمهمة التالية.\n"
+            "موعد إعادة تعيين الفترة يظهر داخل التفاصيل."
         )
-
         try:
-            await member.send(embed=embed)
+            await member.send(embed=embed, view=TaskAvailabilityView(guild["guild_id"], member.id, period))
         except (discord.HTTPException, discord.Forbidden):
             pass
 

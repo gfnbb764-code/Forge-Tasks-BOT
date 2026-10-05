@@ -21,6 +21,7 @@ from database import (
     advance_task_index,
     get_user_rank,
     get_custom_tasks,
+    reset_user_task_state,
 )
 
 
@@ -2137,19 +2138,8 @@ def reset_task_period(
     )
 
 
-    # --------------------------------------------------------
-    # حذف تقدم المهام لهذه الفترة.
-    # --------------------------------------------------------
-
-    for task_id in order:
-
-        set_task_progress(
-            guild_id,
-            user_id,
-            task_id,
-            period,
-            0
-        )
+    # Clear progress and completion records so rewards can be earned again.
+    reset_user_task_state(guild_id, user_id, period)
 
 
     return {

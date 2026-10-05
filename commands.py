@@ -14,6 +14,7 @@ from database import (
     get_top_users,
     get_currency,
     exchange_coins,
+    transfer_coins,
     update_guild_setting,
     required_xp,
     create_custom_task,
@@ -24,7 +25,7 @@ from database import (
     upsert_custom_task,
 )
 
-from tasks import get_all_tasks, register_custom_task, unregister_custom_task, TASK_GROUPS
+from tasks import get_all_tasks, register_custom_task, unregister_custom_task, TASK_GROUPS, get_active_task_display, advance_task_index
 
 from embeds import (
     tasks_embed,
@@ -33,6 +34,7 @@ from embeds import (
     top_embed,
     exchange_embed,
     setup_embed,
+    active_task_embed,
     success_embed,
     error_embed,
 )
@@ -152,6 +154,39 @@ class TasksDashboardView(discord.ui.View):
             "كل فترة تعمل بالتسلسل: أكمل المهمة الحالية لفتح التالية، وستصلك مكافأة وإشعار خاص عند الإكمال.",
             ephemeral=True,
         )
+
+
+class TaskAvailabilityView(discord.ui.View):
+    def __init__(self, guild_id, user_id, period):
+        super().__init__(timeout=900)
+        self.guild_id = guild_id
+        self.user_id = user_id
+        self.period = period
+
+    @discord.ui.button(label="بدء المهمة", emoji="🚀", style=discord.ButtonStyle.success)
+    async def start_task(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("هذه المهمة ليست لك.", ephemeral=True)
+            return
+        guild = get_guild(self.guild_id)
+        embed = active_task_embed(self.guild_id, self.user_id, self.period,
+                                  guild["currency_name"], guild["currency_symbol"])
+        await interaction.response.edit_message(content=None, embed=embed, view=self)
+
+    @discord.ui.button(label="تخطي", emoji="⏭️", style=discord.ButtonStyle.secondary)
+    async def skip_task(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("هذه المهمة ليست لك.", ephemeral=True)
+            return
+        advance_task_index(self.guild_id, self.user_id, self.period)
+        guild = get_guild(self.guild_id)
+        display = get_active_task_display(self.guild_id, self.user_id, self.period)
+        if not display.get("available"):
+            await interaction.response.edit_message(content="لا توجد مهمة أخرى متاحة في هذه الفترة.", embed=None, view=None)
+            return
+        embed = active_task_embed(self.guild_id, self.user_id, self.period,
+                                  guild["currency_name"], guild["currency_symbol"])
+        await interaction.response.edit_message(content="تم تخطي المهمة وفتح المهمة التالية.", embed=embed, view=self)
 
 
 async def custom_task_autocomplete(interaction: discord.Interaction, current: str):
@@ -1535,6 +1570,24 @@ class CommandManager:
         )
 
 
+    @app_commands.describe(
+        member="اختر العضو أو ابحث عن اسمه",
+        amount="عدد الكوينز المراد تحويلها",
+    )
+    async def transfer(self, interaction: discord.Interaction, member: discord.Member, amount: int):
+        if member.bot or member.id == interaction.user.id or amount <= 0:
+            await interaction.response.send_message("اختر عضوًا صالحًا ومبلغًا أكبر من صفر.", ephemeral=True)
+            return
+        ok, reason = transfer_coins(interaction.guild.id, interaction.user.id, member.id, amount)
+        if not ok:
+            message = "رصيدك لا يكفي لإتمام التحويل." if reason == "insufficient" else "تعذر تنفيذ التحويل."
+            await interaction.response.send_message(embed=error_embed("فشل التحويل", message), ephemeral=True)
+            return
+        await interaction.response.send_message(
+            embed=success_embed("تم تحويل الكوينز", f"تم تحويل **{amount}** كوينز إلى {member.mention} ✅")
+        )
+
+
     # ========================================================
     # /help
     # ========================================================
@@ -1579,7 +1632,7 @@ class CommandManager:
         embed.add_field(
             name="💱 Economy" if english else "💱 الاقتصاد",
             value=(
-                "`/exchange` — تحويل العملات"
+                "`/exchange` — تحويل العملات\n`/transfer` — تحويل كوينز لعضو"
             ),
             inline=False
         )
@@ -1807,6 +1860,13 @@ def register_commands(
     bot.tree.add_command(
         exchange_command
     )
+
+    transfer_command = app_commands.Command(
+        name="transfer",
+        description="تحويل كوينز لعضو باختياره من القائمة",
+        callback=manager.transfer,
+    )
+    bot.tree.add_command(transfer_command)
 
     # --------------------------------------------------------
     # Setup

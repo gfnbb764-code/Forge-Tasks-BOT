@@ -670,6 +670,7 @@ class TaskBot(commands.Bot):
         if not event_manager.voice_loop_task:
             await event_manager.start()
             event_manager.voice_loop_task = asyncio.create_task(event_manager.voice_loop())
+            event_manager.period_reset_task = asyncio.create_task(event_manager.period_reset_loop())
 
         print(
             "========================================"

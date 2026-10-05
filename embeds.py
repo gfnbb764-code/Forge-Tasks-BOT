@@ -27,6 +27,22 @@ COLOR_ERROR = discord.Color.red()
 COLOR_GOLD = discord.Color.gold()
 COLOR_LEVEL = discord.Color.purple()
 
+
+def reset_timestamp(period):
+    now = datetime.now(timezone.utc)
+    if period == "daily":
+        target = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        from datetime import timedelta
+        target += timedelta(days=1)
+    elif period == "weekly":
+        from datetime import timedelta
+        target = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        target += timedelta(days=(7 - target.weekday()))
+    else:
+        from datetime import timedelta
+        target = (now.replace(day=28) + timedelta(days=4)).replace(day=1)
+    return int(target.timestamp())
+
 TASK_EN = {
     "إرسال 25 رسالة": ("Send 25 messages", "Send 25 messages in the configured task channel."),
     "البقاء في الصوت 10 دقائق": ("Stay in voice for 10 minutes", "Join any voice channel and stay for 10 minutes."),
@@ -310,7 +326,8 @@ def tasks_embed(
                 f"🎁 المكافأة: "
                 f"**{task['reward']} "
                 f"{currency_symbol} "
-                f"{currency_name}**"
+                f"{currency_name}**\n\n"
+                f"⏳ إعادة التعيين: <t:{reset_timestamp(period)}:R>"
 
             )
 
